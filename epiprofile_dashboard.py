@@ -556,7 +556,7 @@ for name, path in EXPERIMENTS.items():
         if psm is not None and not psm.empty:
             print(f"    PSM identifications: {len(psm)}")
         print(f"    Detail records: {len(EXP_DATA[name].get('all_detail', []))}")
-        print(f"    → {EXP_DATA[name].get('description', '')}")
+        print(f"    >> {EXP_DATA[name].get('description', '')}")
 
 DEFAULT_EXP = list(EXP_DATA.keys())[0] if EXP_DATA else None
 
@@ -1709,7 +1709,7 @@ if __name__ == "__main__":
     print("  EpiProfile-Plants Dashboard v3.0")
     print(f"  Experiments loaded: {len(EXP_DATA)}")
     for name in EXP_DATA:
-        print(f"    \u2022 {name}")
-    print(f"\n  \u279c  http://localhost:{port}")
+        print(f"    * {name}")
+    print(f"\n  =>  http://localhost:{port}")
     print("=" * 60 + "\n")
     app.run(debug=False, port=port, host=host)
