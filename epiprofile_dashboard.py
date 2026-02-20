@@ -1300,6 +1300,24 @@ def tab_stats(d):
     if df is None or meta.empty:
         return html.Div(style=CS, children=[html.P("No data.")])
 
+    # Check if Design column exists (for stratified analysis)
+    designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
+
+    if designs:
+        return html.Div([
+            html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap"}, children=[
+                html.Div(style={"flex":"1","minWidth":"250px"}, children=[
+                    _lbl("Design / Strain (independent analysis)"),
+                    dcc.Dropdown(id="stats-design",
+                        options=[{"label":"All (pooled - CAUTION)","value":"All"}]+[{"label":f"Design {x}","value":str(x)} for x in designs],
+                        value=str(designs[0]), clearable=False, style=DS)]),
+                html.Div(style={"padding":"8px"}, children=[
+                    html.P("Strains must be analyzed independently!", style={"color":C["red"],"fontSize":"13px","fontWeight":"700","margin":"0"})
+                ]),
+            ]),
+            html.Div(id="stats-out"),
+        ])
+
     groups = sorted(meta["Group"].unique())
     if len(groups) < 2:
         return html.Div(style=CS, children=[html.P("Need >= 2 groups for statistics.")])
@@ -1365,6 +1383,84 @@ def tab_stats(d):
         ]),
         html.Div(style=CS, children=[
             _st("Full Statistical Results","Kruskal-Wallis + BH FDR correction | Editable"),
+            make_table(res, "stats-table")]),
+    ])
+
+
+@callback(Output("stats-out","children"),
+          Input("stats-design","value"), Input("cur-exp","data"), prevent_initial_call=True)
+def _stats_design(design, exp):
+    if not exp or exp not in EXP_DATA: return html.P("N/A")
+    d = EXP_DATA[exp]
+    df = d.get("hptm", d.get("hpf"))
+    meta = d.get("metadata", pd.DataFrame())
+    if df is None or meta.empty: return html.P("No data.")
+
+    # Filter to design
+    if design != "All" and "Design" in meta.columns:
+        meta = meta[meta["Design"].astype(str) == str(design)].copy()
+        samps = meta["Sample"].tolist()
+        cols = [c for c in df.columns if c in samps]
+        df = df[cols]
+
+    groups = sorted(meta["Group"].unique())
+    if len(groups) < 2:
+        return html.P(f"Design {design}: only {len(groups)} group(s) found. Need >= 2.", style={"color":C["red"],"padding":"20px"})
+
+    res = robust_group_test(df, meta, groups)
+    if res.empty:
+        return html.P("Could not compute statistics.", style={"color":C["red"]})
+
+    n_sig = int((res["KW_FDR"] < 0.05).sum())
+    n_tested = len(res)
+
+    fc_data = []
+    for _, row in res.iterrows():
+        means = [row.get(f"mean_{g}", np.nan) for g in groups]
+        means = [m for m in means if not np.isnan(m) and m > 0]
+        if len(means) >= 2:
+            max_fc = np.log2(max(means)/min(means))
+            fc_data.append({"PTM":row["PTM"], "maxLog2FC":max_fc,
+                            "negLog10FDR":-np.log10(row["KW_FDR"]+1e-300), "FDR":row["KW_FDR"]})
+
+    if fc_data:
+        vdf = pd.DataFrame(fc_data)
+        vdf["sig"] = vdf["FDR"] < 0.05
+        vfig = px.scatter(vdf, x="maxLog2FC", y="negLog10FDR", hover_name="PTM",
+                          color="sig", color_discrete_map={True:C["red"],False:C["muted"]})
+        pfig(vfig, 450)
+        vfig.add_hline(y=-np.log10(0.05), line_dash="dash", line_color=C["red"], annotation_text="FDR=0.05")
+        vfig.update_traces(marker=dict(size=8,line=dict(width=0.5,color="white")))
+    else:
+        vfig = go.Figure(); pfig(vfig, 450)
+
+    sig_res = res[res["KW_FDR"] < 0.05].head(30)
+    if not sig_res.empty:
+        sbf = go.Figure(go.Bar(x=-np.log10(sig_res["KW_FDR"].values+1e-300),
+            y=sig_res["PTM"].tolist(), orientation="h",
+            marker=dict(color=-np.log10(sig_res["KW_FDR"].values+1e-300),colorscale="Reds",line=dict(width=0))))
+        pfig(sbf, max(300,len(sig_res)*18))
+        sbf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),margin=dict(l=180),xaxis_title="-log10(FDR)")
+    else:
+        sbf = go.Figure(); pfig(sbf, 300)
+
+    design_label = f"Design {design}" if design != "All" else "All designs (pooled)"
+    return html.Div([
+        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
+            _sc("Tested",str(n_tested),C["accent"]),
+            _sc("Significant (FDR<0.05)",str(n_sig),C["red"] if n_sig>0 else C["green"]),
+            _sc("Groups",str(len(groups)),C["h4"]),
+        ]),
+        html.P(f"Analysis: {design_label} | Groups: {', '.join(groups)} | n={len(meta)} samples",
+               style={"color":C["accent"],"fontWeight":"600","fontSize":"14px","marginBottom":"12px"}),
+        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[
+                _st("Volcano Plot",f"Kruskal-Wallis FDR | {design_label}"), dcc.Graph(figure=vfig)]),
+            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[
+                _st(f"Top Significant Features (FDR<0.05)","n={0}".format(n_sig)), dcc.Graph(figure=sbf)]),
+        ]),
+        html.Div(style=CS, children=[
+            _st("Full Statistical Results","Kruskal-Wallis + BH FDR | Editable"),
             make_table(res, "stats-table")]),
     ])
 
@@ -1659,22 +1755,34 @@ def tab_cmp(d):
     if df is None: return html.Div(style=CS, children=[html.P("No data.")])
     if len(groups)<2: return html.Div(style=CS, children=[html.P("Need >=2 groups.")])
 
+    designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
+
+    filter_children = [
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Group A"),
+            dcc.Dropdown(id="cmp-a",options=[{"label":g,"value":g} for g in groups],
+                         value=groups[0],clearable=False,style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Group B"),
+            dcc.Dropdown(id="cmp-b",options=[{"label":g,"value":g} for g in groups],
+                         value=groups[1] if len(groups)>1 else groups[0],clearable=False,style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Data Level"),
+            dcc.Dropdown(id="cmp-level",options=[{"label":"hPTM (single)","value":"hptm"},
+                         {"label":"hPF (peptidoforms)","value":"hpf"}],
+                         value="hptm",clearable=False,style=DS)]),
+    ]
+    if designs:
+        filter_children.append(
+            html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+                _lbl("Design / Strain"),
+                html.P("Select groups from same strain!", style={"color":C["red"],"fontSize":"11px","margin":"2px 0","fontWeight":"600"}),
+            ])
+        )
+
     return html.Div([
-        html.Div(style={**CS,"display":"flex","gap":"16px","flexWrap":"wrap","alignItems":"flex-end"}, children=[
-            html.Div(style={"flex":"1","minWidth":"200px"}, children=[
-                _lbl("Group A"),
-                dcc.Dropdown(id="cmp-a",options=[{"label":g,"value":g} for g in groups],
-                             value=groups[0],clearable=False,style=DS)]),
-            html.Div(style={"flex":"1","minWidth":"200px"}, children=[
-                _lbl("Group B"),
-                dcc.Dropdown(id="cmp-b",options=[{"label":g,"value":g} for g in groups],
-                             value=groups[1],clearable=False,style=DS)]),
-            html.Div(style={"flex":"1","minWidth":"200px"}, children=[
-                _lbl("Data Level"),
-                dcc.Dropdown(id="cmp-level",options=[{"label":"hPTM (single)","value":"hptm"},
-                             {"label":"hPF (peptidoforms)","value":"hpf"}],
-                             value="hptm",clearable=False,style=DS)]),
-        ]),
+        html.Div(style={**CS,"display":"flex","gap":"16px","flexWrap":"wrap","alignItems":"flex-end"},
+                 children=filter_children),
         html.Div(id="cmp-out"),
     ])
 
