@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.5 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.6 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -164,7 +164,7 @@ ALT_RATIOS = {
     },
 }
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.5")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.6")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -285,11 +285,13 @@ def parse_ratios_hierarchy(raw_df):
     """Parse histone_ratios.xls into structured hDP/hPF/variant levels."""
     first_col = raw_df.iloc[:, 0].astype(str)
 
-    # Find separator column for ratio/area blocks
-    sep_idx = None
+    # Find ALL separator columns for ratio/area/RT blocks
+    sep_indices = []
     for i, col in enumerate(raw_df.columns):
         if "Unnamed" in str(col) and i > 0:
-            sep_idx = i; break
+            sep_indices.append(i)
+    sep_idx = sep_indices[0] if len(sep_indices) >= 1 else None
+    sep_idx2 = sep_indices[1] if len(sep_indices) >= 2 else None
 
     sample_cols_r = raw_df.columns[1:sep_idx] if sep_idx else raw_df.columns[1:]
     sample_names = [c.split(",",1)[1] if "," in c else c for c in sample_cols_r]
@@ -299,15 +301,26 @@ def parse_ratios_hierarchy(raw_df):
     ratio_block.columns = ["PTM"] + list(sample_names)
     ratio_block = ratio_block.iloc[1:].reset_index(drop=True)  # skip sub-header row
 
-    # Build area matrix if present
+    # Build area matrix (between separator 1 and separator 2)
     area_block = None
     if sep_idx and sep_idx + 1 < len(raw_df.columns):
-        ab = raw_df.iloc[:, sep_idx+1:].copy()
+        area_end = sep_idx2 if sep_idx2 else len(raw_df.columns)
+        ab = raw_df.iloc[:, sep_idx+1:area_end].copy()
         ab.insert(0, "PTM", raw_df.iloc[:, 0])
         acols = [re.sub(r"\.\d+$","",c.split(",",1)[1]) if "," in str(c) else str(c) for c in ab.columns[1:]]
         ab.columns = ["PTM"] + acols
         ab = ab.iloc[1:].reset_index(drop=True)
         area_block = ab
+
+    # Build RT matrix (after separator 2)
+    rt_block = None
+    if sep_idx2 and sep_idx2 + 1 < len(raw_df.columns):
+        rb = raw_df.iloc[:, sep_idx2+1:].copy()
+        rb.insert(0, "PTM", raw_df.iloc[:, 0])
+        rtcols = [re.sub(r"\.\d+$","",c.split(",",1)[1]) if "," in str(c) else str(c) for c in rb.columns[1:]]
+        rb.columns = ["PTM"] + rtcols
+        rb = rb.iloc[1:].reset_index(drop=True)
+        rt_block = rb
 
     # Classify rows
     hdp_list = []     # peptide region headers
@@ -404,19 +417,26 @@ def parse_ratios_hierarchy(raw_df):
         var_df = pd.DataFrame()
         var_meta = pd.DataFrame()
 
-    # Area matrix
+    # Area matrix (fixed: only columns between sep1 and sep2, not including RT)
     areas_df = None
     if area_block is not None:
         a_filtered = area_block[area_block["PTM"].isin(hpf_df.index)].copy()
         if not a_filtered.empty:
             a_filtered = a_filtered.set_index("PTM")
             a_filtered = a_filtered.apply(pd.to_numeric, errors="coerce")
-            # Fix duplicate column names
-            acn = []
-            for cn in a_filtered.columns:
-                acn.append(cn if cn not in acn else cn + "_area")
-            a_filtered.columns = acn
+            # Ensure column names match sample_names exactly
+            a_filtered.columns = sample_names[:len(a_filtered.columns)]
             areas_df = a_filtered
+
+    # RT matrix
+    rt_df = None
+    if rt_block is not None:
+        r_filtered = rt_block[rt_block["PTM"].isin(hpf_df.index)].copy()
+        if not r_filtered.empty:
+            r_filtered = r_filtered.set_index("PTM")
+            r_filtered = r_filtered.apply(pd.to_numeric, errors="coerce")
+            r_filtered.columns = sample_names[:len(r_filtered.columns)]
+            rt_df = r_filtered
 
     return {
         "sample_names": sample_names,
@@ -426,6 +446,7 @@ def parse_ratios_hierarchy(raw_df):
         "var_df": var_df,
         "var_meta": var_meta,
         "areas": areas_df,
+        "rt": rt_df,
     }
 
 
@@ -461,6 +482,11 @@ def load_experiment(base_dir):
             data["var_meta"] = parsed["var_meta"]
             if parsed["areas"] is not None:
                 data["areas"] = parsed["areas"]
+                log2_a, qn_a = normalize_areas(parsed["areas"])
+                if log2_a is not None: data["areas_log2"] = log2_a
+                if qn_a is not None: data["areas_norm"] = qn_a
+            if parsed.get("rt") is not None:
+                data["rt"] = parsed["rt"]
         except Exception as e:
             print(f"    WARN parsing ratios: {e}")
 
@@ -508,6 +534,8 @@ def build_desc(d):
     if "hptm" in d: parts.append(f"{d['hptm'].shape[0]} hPTMs")
     if "hpf" in d and not d["hpf"].empty: parts.append(f"{d['hpf'].shape[0]} peptidoforms")
     if "hdp_list" in d: parts.append(f"{len(d['hdp_list'])} peptide regions")
+    if "areas_norm" in d: parts.append("Areas (normalized)")
+    if "rt" in d: parts.append("RT available")
     psm = d.get("all_psm", pd.DataFrame())
     if not psm.empty: parts.append(f"{len(psm):,} PSMs")
     return " | ".join(parts) if parts else ""
@@ -618,15 +646,19 @@ def load_all_psm(ld, folders):
 # STATISTICAL HELPERS
 # ======================================================================
 
-def robust_group_test(df, meta, groups):
-    """Kruskal-Wallis + pairwise Mann-Whitney with FDR correction."""
+def robust_group_test(df, meta, groups, is_log=False):
+    """Kruskal-Wallis + pairwise Mann-Whitney with FDR correction.
+    is_log: if True, data is log-scale (filter non-finite instead of zeros)."""
     results = []
     for ptm in df.index:
         group_vals = {}
         for g in groups:
             samps = meta[meta["Group"]==g]["Sample"].tolist()
             vals = df.loc[ptm, [s for s in samps if s in df.columns]].dropna()
-            vals = vals[vals != 0]
+            if is_log:
+                vals = vals[np.isfinite(vals)]
+            else:
+                vals = vals[vals != 0]
             if len(vals) > 0:
                 group_vals[g] = vals.values
 
@@ -672,8 +704,9 @@ def robust_group_test(df, meta, groups):
     return res_df
 
 
-def pairwise_mw(df, meta, g1, g2):
-    """Mann-Whitney U between two groups for all PTMs."""
+def pairwise_mw(df, meta, g1, g2, is_log=False):
+    """Mann-Whitney U between two groups for all PTMs.
+    is_log: if True, data is already log-scale so FC = mean_B - mean_A."""
     sa = meta[meta["Group"]==g1]["Sample"].tolist()
     sb = meta[meta["Group"]==g2]["Sample"].tolist()
     ca = [c for c in df.columns if c in sa]
@@ -682,11 +715,14 @@ def pairwise_mw(df, meta, g1, g2):
     for ptm in df.index:
         va = df.loc[ptm, ca].dropna().values.astype(float)
         vb = df.loc[ptm, cb].dropna().values.astype(float)
-        va = va[va != 0]; vb = vb[vb != 0]
+        if not is_log:
+            va = va[va != 0]; vb = vb[vb != 0]
+        else:
+            va = va[np.isfinite(va)]; vb = vb[np.isfinite(vb)]
         if len(va) >= 2 and len(vb) >= 2:
             try:
                 stat, p = mannwhitneyu(va, vb, alternative="two-sided")
-                fc = np.log2((np.mean(vb)+1e-8)/(np.mean(va)+1e-8))
+                fc = (np.mean(vb) - np.mean(va)) if is_log else np.log2((np.mean(vb)+1e-8)/(np.mean(va)+1e-8))
                 results.append({"PTM":ptm,"U_stat":stat,"pval":p,"log2FC":fc,
                                 "mean_A":np.mean(va),"mean_B":np.mean(vb),
                                 "median_A":np.median(va),"median_B":np.median(vb)})
@@ -699,6 +735,61 @@ def pairwise_mw(df, meta, g1, g2):
     else:
         rdf["FDR"] = rdf["pval"]
     return rdf.sort_values("pval")
+
+
+def quantile_normalize(df):
+    """Quantile normalization (Bolstad 2003). NaN-aware, pure pandas/numpy.
+    Input: features (rows) x samples (columns) DataFrame.
+    Returns: quantile-normalized DataFrame, same shape, NaN preserved."""
+    if df is None or df.empty: return df
+    result = df.copy()
+    # Sort each column independently, compute reference distribution
+    sorted_df = df.apply(lambda c: c.dropna().sort_values().reset_index(drop=True))
+    reference = sorted_df.mean(axis=1)
+    if reference.empty: return df
+    # For each column, map ranked values to reference distribution
+    for col in df.columns:
+        valid = df[col].dropna()
+        if valid.empty: continue
+        ranked = valid.rank(method="average")
+        max_rank = ranked.max()
+        if max_rank <= 1:
+            result.loc[valid.index, col] = reference.iloc[0] if len(reference) > 0 else valid.values
+            continue
+        # Scale ranks to reference distribution indices
+        scaled = (ranked - 1) / (max_rank - 1) * (len(reference) - 1)
+        result.loc[valid.index, col] = np.interp(
+            scaled.values, np.arange(len(reference)), reference.values)
+    return result
+
+
+def normalize_areas(areas_df):
+    """Full normalization pipeline for MS areas.
+    1. Replace zeros with NaN (non-detects)
+    2. Log2 transform
+    3. Quantile normalization
+    Returns: (log2_df, qn_df) -- log2-only and log2+QN DataFrames."""
+    if areas_df is None or areas_df.empty: return None, None
+    clean = areas_df.replace(0, np.nan)
+    log2_df = np.log2(clean)
+    qn_df = quantile_normalize(log2_df)
+    return log2_df, qn_df
+
+
+def _get_data_source(d, source):
+    """Resolve data source key to a DataFrame.
+    source: 'ratios'|'hptm'|'hpf'|'areas_norm'|'areas_log2'"""
+    if source in ("ratios", None):
+        return d.get("hptm", d.get("hpf"))
+    elif source == "hptm":
+        return d.get("hptm")
+    elif source == "hpf":
+        return d.get("hpf")
+    elif source == "areas_norm":
+        return d.get("areas_norm")
+    elif source == "areas_log2":
+        return d.get("areas_log2")
+    return d.get(source, d.get("hptm", d.get("hpf")))
 
 
 # ======================================================================
@@ -721,6 +812,9 @@ for name, path in EXPERIMENTS.items():
         if "hptm" in d: print(f"    hPTM: {d['hptm'].shape}")
         if n_hpf: print(f"    hPF:  {d['hpf'].shape}")
         if n_reg: print(f"    hDP:  {n_reg} regions")
+        if "areas" in d: print(f"    Areas: {d['areas'].shape}")
+        if "areas_norm" in d: print(f"    Areas (log2+QN): {d['areas_norm'].shape}")
+        if "rt" in d: print(f"    RT: {d['rt'].shape}")
         print(f"    Folders: {len(d['sample_folders'])}")
         psm = d.get("all_psm", pd.DataFrame())
         if not psm.empty: print(f"    PSMs: {len(psm)}")
@@ -764,7 +858,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                 html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"32px","fontWeight":"800",
                          "letterSpacing":"-0.5px","color":"white","lineHeight":"1.1"}),
                 html.Div(style={"display":"flex","gap":"10px","alignItems":"center","marginTop":"4px"}, children=[
-                    html.Span("PTM Dashboard v3.5", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
+                    html.Span("PTM Dashboard v3.6", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
                     html.Span("|", style={"color":"rgba(255,255,255,0.4)"}),
                     html.Span("hPTM", style={"background":"rgba(255,255,255,0.15)","padding":"2px 8px",
                               "borderRadius":"4px","fontSize":"12px","fontWeight":"600"}),
@@ -855,7 +949,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
     html.Div(style={"textAlign":"center","padding":"24px","color":"#166534","fontSize":"13px",
                      "background":"linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%)",
                      "borderTop":"2px solid #bbf7d0","marginTop":"40px"}, children=[
-        html.Span("EpiProfile-Plants v3.5 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
+        html.Span("EpiProfile-Plants v3.6 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
         html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
                style={"color":"#15803d","textDecoration":"none","fontWeight":"700"}, target="_blank"),
     ]),
@@ -1434,15 +1528,27 @@ def tab_qc(d):
                       title="Completeness", color_discrete_sequence=[C["accent"]])
     pfig(ch, 300)
 
-    areas = d.get("areas")
-    ab = go.Figure()
-    if areas is not None:
-        la = np.log10(areas.replace(0,np.nan))
-        ma = la.stack().reset_index(); ma.columns = ["PTM","Sample","Log10Area"]
-        ma = ma.merge(meta, on="Sample", how="left")
-        ab = px.box(ma, x="Sample", y="Log10Area", color="Group",
-                    title="Log10(Area) per Sample", color_discrete_sequence=GC)
-        pfig(ab, 380); ab.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=11)),showlegend=False)
+    # Area normalization: before vs after QN comparison
+    areas_log2 = d.get("areas_log2")
+    areas_norm = d.get("areas_norm")
+    area_children = []
+    if areas_log2 is not None:
+        la_raw = areas_log2.stack().reset_index(); la_raw.columns = ["PTM","Sample","Log2Area"]
+        la_raw = la_raw.merge(meta, on="Sample", how="left")
+        ab_raw = px.box(la_raw.dropna(subset=["Log2Area"]), x="Sample", y="Log2Area", color="Group",
+                        title="Log2(Area) BEFORE Quantile Normalization", color_discrete_sequence=GC)
+        pfig(ab_raw, 380, n_x=len(meta))
+        ab_raw.update_layout(xaxis=dict(tickangle=45),showlegend=False)
+        area_children.append(html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=ab_raw)]))
+
+    if areas_norm is not None:
+        la_qn = areas_norm.stack().reset_index(); la_qn.columns = ["PTM","Sample","Log2Area_QN"]
+        la_qn = la_qn.merge(meta, on="Sample", how="left")
+        ab_qn = px.box(la_qn.dropna(subset=["Log2Area_QN"]), x="Sample", y="Log2Area_QN", color="Group",
+                        title="Log2(Area) AFTER Quantile Normalization", color_discrete_sequence=GC)
+        pfig(ab_qn, 380, n_x=len(meta))
+        ab_qn.update_layout(xaxis=dict(tickangle=45),showlegend=False)
+        area_children.append(html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=ab_qn)]))
 
     logs = d.get("logs",[]); nc = sum(1 for e in logs if e["n_warnings"]==0)
     nw = sum(1 for e in logs if e["n_warnings"]>0); tw = sum(e["n_warnings"] for e in logs)
@@ -1450,7 +1556,7 @@ def tab_qc(d):
     td = int(binary.sum().sum()); tp = binary.shape[0]*binary.shape[1]
     comp = td/tp*100 if tp>0 else 0
 
-    return html.Div([
+    children = [
         html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
             _sc("Samples",str(ns),C["accent"]), _sc("Features",str(np_),C["accent"]),
             _sc("Completeness",f"{comp:.1f}%",C["green"]),
@@ -1462,8 +1568,13 @@ def tab_qc(d):
             html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=mb)]),
             html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=ch)]),
         ]),
-        html.Div(style=CS, children=[_st("Area Distribution"), dcc.Graph(figure=ab)]) if areas is not None else html.Div(),
-    ])
+    ]
+    if area_children:
+        children.append(html.Div([
+            _st("Area Normalization", "Before vs After Quantile Normalization | log2(MS1 intensity)"),
+            html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=area_children),
+        ]))
+    return html.Div(children)
 
 
 # ======================================================================
@@ -1471,10 +1582,35 @@ def tab_qc(d):
 # ======================================================================
 
 def tab_pca(d):
-    df = d.get("hptm", d.get("hpf"))
+    """PCA & Clustering — layout with Data Source selector."""
+    has_areas = "areas_norm" in d and d["areas_norm"] is not None
+    source_opts = [{"label":"Ratios (default)","value":"ratios"}]
+    if has_areas:
+        source_opts.append({"label":"Areas (log2 + QN)","value":"areas_norm"})
+        source_opts.append({"label":"Areas (log2 only)","value":"areas_log2"})
+    return html.Div([
+        html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap"}, children=[
+            html.Div(style={"flex":"1","minWidth":"220px"}, children=[
+                _lbl("Data Source"),
+                dcc.Dropdown(id="pca-source",options=source_opts,value="ratios",clearable=False,style=DS)]),
+        ]),
+        html.Div(id="pca-out"),
+    ])
+
+
+@callback(Output("pca-out","children"),
+          Input("pca-source","value"), Input("cur-exp","data"), Input("cur-palette","data"),
+          prevent_initial_call=True)
+def _pca_content(source, exp, pal):
+    if not exp or exp not in EXP_DATA: return html.P("N/A")
+    d = EXP_DATA[exp]
+    df = _get_data_source(d, source)
     meta = d.get("metadata", pd.DataFrame())
     if df is None or df.empty:
-        return html.Div(style=CS, children=[html.P("No data.")])
+        return html.Div(style=CS, children=[html.P("No data for selected source.")])
+
+    is_log = source in ("areas_norm", "areas_log2")
+    src_label = {"ratios":"Ratios","areas_norm":"Areas (log2+QN)","areas_log2":"Areas (log2)"}.get(source,"Ratios")
 
     X = df.T.fillna(0)
     n_comp = min(3, X.shape[1], X.shape[0])
@@ -1485,7 +1621,6 @@ def tab_pca(d):
     coords = pca.fit_transform(X.values)
     ev = pca.explained_variance_ratio_ * 100
 
-    # PCA scatter
     pc_df = pd.DataFrame({"PC1":coords[:,0],"PC2":coords[:,1],"Sample":X.index})
     if n_comp>=3: pc_df["PC3"] = coords[:,2]
     pc_df = pc_df.merge(meta, on="Sample")
@@ -1494,165 +1629,113 @@ def tab_pca(d):
                       symbol="Tissue" if pc_df["Tissue"].nunique()>1 else None,
                       color_discrete_sequence=GC)
     fig1.update_traces(marker=dict(size=11,line=dict(width=1.5,color="white")))
-    pfig(fig1, 500)
+    pfig(fig1, 500, n_groups=len(pc_df["Group"].unique()))
     fig1.update_layout(xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
-                       title=dict(text="PCA - Sample Space",font=dict(size=18)))
+                       title=dict(text=f"PCA - {src_label}",font=dict(size=18)))
 
-    # Add 95% confidence ellipses per group
     for grp in sorted(pc_df["Group"].unique()):
         gd = pc_df[pc_df["Group"]==grp]
         if len(gd) >= 3:
             mx, my = gd["PC1"].mean(), gd["PC2"].mean()
             sx, sy = gd["PC1"].std(), gd["PC2"].std()
             theta = np.linspace(0,2*np.pi,50)
-            x_ell = mx + 1.96*sx*np.cos(theta)
-            y_ell = my + 1.96*sy*np.sin(theta)
-            fig1.add_trace(go.Scatter(x=x_ell,y=y_ell,mode="lines",
-                                       line=dict(width=1,dash="dash"),showlegend=False,
-                                       opacity=0.4,hoverinfo="skip"))
+            fig1.add_trace(go.Scatter(x=mx+1.96*sx*np.cos(theta),y=my+1.96*sy*np.sin(theta),
+                                       mode="lines",line=dict(width=1,dash="dash"),showlegend=False,opacity=0.4,hoverinfo="skip"))
 
-    # Scree plot
     all_ev = pca.explained_variance_ratio_
     sfig = go.Figure()
-    sfig.add_trace(go.Bar(x=[f"PC{i+1}" for i in range(len(all_ev))],
-                          y=all_ev*100, marker_color=C["accent"],name="Individual"))
-    sfig.add_trace(go.Scatter(x=[f"PC{i+1}" for i in range(len(all_ev))],
-                              y=np.cumsum(all_ev)*100, mode="lines+markers",
-                              marker_color=C["red"],name="Cumulative",yaxis="y2"))
+    sfig.add_trace(go.Bar(x=[f"PC{i+1}" for i in range(len(all_ev))],y=all_ev*100,marker_color=C["accent"],name="Individual"))
+    sfig.add_trace(go.Scatter(x=[f"PC{i+1}" for i in range(len(all_ev))],y=np.cumsum(all_ev)*100,
+                              mode="lines+markers",marker_color=C["red"],name="Cumulative",yaxis="y2"))
     pfig(sfig, 350)
-    sfig.update_layout(yaxis_title="Variance Explained (%)",
-                       yaxis2=dict(title="Cumulative %",overlaying="y",side="right",range=[0,105]),
+    sfig.update_layout(yaxis_title="Variance Explained (%)",yaxis2=dict(title="Cumulative %",overlaying="y",side="right",range=[0,105]),
                        title=dict(text="Scree Plot",font=dict(size=18)))
 
-    # Loadings biplot
-    loadings = pca.components_[:2].T  # features x 2
+    loadings = pca.components_[:2].T
     load_df = pd.DataFrame({"Feature":df.index,"PC1":loadings[:,0],"PC2":loadings[:,1]})
-    # Top 15 by loading magnitude
-    load_df["mag"] = np.sqrt(load_df["PC1"]**2 + load_df["PC2"]**2)
-    top_load = load_df.nlargest(15, "mag")
+    load_df["mag"] = np.sqrt(load_df["PC1"]**2+load_df["PC2"]**2)
+    top_load = load_df.nlargest(15,"mag")
 
     bfig = go.Figure()
-    # Plot samples (faded)
     for grp in sorted(pc_df["Group"].unique()):
         gd = pc_df[pc_df["Group"]==grp]
-        bfig.add_trace(go.Scatter(x=gd["PC1"],y=gd["PC2"],mode="markers",name=grp,
-                                   marker=dict(size=8,opacity=0.4),showlegend=True))
-    # Plot loading arrows
-    scale = np.abs(coords[:,:2]).max() / (np.abs(loadings).max()+1e-10) * 0.8
+        bfig.add_trace(go.Scatter(x=gd["PC1"],y=gd["PC2"],mode="markers",name=grp,marker=dict(size=8,opacity=0.4)))
+    scale = np.abs(coords[:,:2]).max()/(np.abs(loadings).max()+1e-10)*0.8
     for _, row in top_load.iterrows():
-        bfig.add_annotation(ax=0,ay=0,x=row["PC1"]*scale,y=row["PC2"]*scale,
-                            xref="x",yref="y",axref="x",ayref="y",
-                            showarrow=True,arrowhead=2,arrowsize=1.5,arrowwidth=1.5,
-                            arrowcolor=C["red"])
-        bfig.add_annotation(x=row["PC1"]*scale*1.1,y=row["PC2"]*scale*1.1,
-                            text=row["Feature"],showarrow=False,font=dict(size=12,color=C["red"]))
-    pfig(bfig, 500)
-    bfig.update_layout(xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
-                       title=dict(text="PCA Biplot - Samples + Top Loadings",font=dict(size=18)))
+        bfig.add_annotation(ax=0,ay=0,x=row["PC1"]*scale,y=row["PC2"]*scale,xref="x",yref="y",axref="x",ayref="y",
+                            showarrow=True,arrowhead=2,arrowsize=1.5,arrowwidth=1.5,arrowcolor=C["red"])
+        bfig.add_annotation(x=row["PC1"]*scale*1.1,y=row["PC2"]*scale*1.1,text=row["Feature"],showarrow=False,font=dict(size=12,color=C["red"]))
+    pfig(bfig, 500, n_groups=len(pc_df["Group"].unique()))
+    bfig.update_layout(xaxis_title=f"PC1 ({ev[0]:.1f}%)",yaxis_title=f"PC2 ({ev[1]:.1f}%)",
+                       title=dict(text=f"PCA Biplot - {src_label}",font=dict(size=18)))
 
-    # 3D PCA if available
     fig3d = go.Figure()
     if n_comp >= 3:
-        fig3d = px.scatter_3d(pc_df, x="PC1", y="PC2", z="PC3", color="Group",
-                               hover_name="Sample", color_discrete_sequence=GC)
+        fig3d = px.scatter_3d(pc_df, x="PC1",y="PC2",z="PC3",color="Group",hover_name="Sample",color_discrete_sequence=GC)
         fig3d.update_traces(marker=dict(size=6))
         pfig(fig3d, 500)
-        fig3d.update_layout(scene=dict(
-            xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
-            zaxis_title=f"PC3 ({ev[2]:.1f}%)"),
-            title=dict(text="3D PCA",font=dict(size=18)))
+        fig3d.update_layout(scene=dict(xaxis_title=f"PC1 ({ev[0]:.1f}%)",yaxis_title=f"PC2 ({ev[1]:.1f}%)",zaxis_title=f"PC3 ({ev[2]:.1f}%)"),
+                            title=dict(text=f"3D PCA - {src_label}",font=dict(size=18)))
 
-    # Dendrogram
     try:
         dd = df.T.fillna(0).values
-        dist_ = pdist(dd, metric="euclidean")
-        link_ = linkage(dist_, method="ward")
+        dist_ = pdist(dd,metric="euclidean"); link_ = linkage(dist_,method="ward")
         dr = scipy_dend(link_, labels=df.columns.tolist(), no_plot=True)
         dfig = go.Figure()
         for xc, yc in zip(dr["icoord"],dr["dcoord"]):
             dfig.add_trace(go.Scatter(x=xc,y=yc,mode="lines",line=dict(color=C["accent"],width=1.5),showlegend=False))
         tp_ = [5+10*i for i in range(len(dr["ivl"]))]
-        dfig.update_layout(template=PUB,height=350,
-            xaxis=dict(tickmode="array",tickvals=tp_,ticktext=dr["ivl"],tickangle=45,tickfont=dict(size=11)),
-            yaxis_title="Distance (Ward)",title=dict(text="Hierarchical Clustering",font=dict(size=18)),margin=dict(b=120))
-    except:
-        dfig = go.Figure(); pfig(dfig, 350)
+        dfig.update_layout(template=PUB,height=350,xaxis=dict(tickmode="array",tickvals=tp_,ticktext=dr["ivl"],tickangle=45,
+                           tickfont=dict(size=adaptive_font(len(dr["ivl"])))),yaxis_title="Distance (Ward)",
+                           title=dict(text="Hierarchical Clustering",font=dict(size=18)),margin=dict(b=120))
+    except: dfig = go.Figure(); pfig(dfig, 350)
 
-    # Correlation heatmap
     corr = df.corr(method="spearman")
-    co_ = cluster_order(corr, 0); corr = corr.loc[co_,co_]
-    chm = phm(corr.values, corr.columns.tolist(), corr.index.tolist(),
-              cs="RdBu_r", title="Spearman", zmin=-1, zmax=1, h=max(500,len(corr)*12))
+    co_ = cluster_order(corr,0); corr = corr.loc[co_,co_]
+    chm = phm(corr.values,corr.columns.tolist(),corr.index.tolist(),cs="RdBu_r",title="Spearman",zmin=-1,zmax=1,h=max(500,len(corr)*12))
 
-    # --- Feature clustering (K-means + dendrogram) ---
-    feat_X = df.fillna(0).values  # features x samples matrix
-    n_feats = feat_X.shape[0]
-
-    # Feature dendrogram (cluster features by their ratio profiles)
+    feat_X = df.fillna(0).values; n_feats = feat_X.shape[0]
     try:
-        feat_dist = pdist(feat_X, metric="euclidean")
-        feat_link = linkage(feat_dist, method="ward")
+        feat_dist = pdist(feat_X,metric="euclidean"); feat_link = linkage(feat_dist,method="ward")
         feat_dr = scipy_dend(feat_link, labels=df.index.tolist(), no_plot=True)
         feat_dfig = go.Figure()
-        for xc, yc in zip(feat_dr["icoord"], feat_dr["dcoord"]):
-            feat_dfig.add_trace(go.Scatter(x=yc, y=xc, mode="lines",
-                line=dict(color=C["green"], width=1.2), showlegend=False))
+        for xc, yc in zip(feat_dr["icoord"],feat_dr["dcoord"]):
+            feat_dfig.add_trace(go.Scatter(x=yc,y=xc,mode="lines",line=dict(color=C["green"],width=1.2),showlegend=False))
         tp_f = [5+10*i for i in range(len(feat_dr["ivl"]))]
-        feat_dfig.update_layout(template=PUB, height=max(400, n_feats*14),
-            yaxis=dict(tickmode="array", tickvals=tp_f, ticktext=feat_dr["ivl"],
-                       tickfont=dict(size=adaptive_font(n_feats))),
-            xaxis_title="Distance (Ward)",
-            title=dict(text="Feature Dendrogram (PTM Clustering)", font=dict(size=18)),
+        feat_dfig.update_layout(template=PUB,height=max(400,n_feats*14),
+            yaxis=dict(tickmode="array",tickvals=tp_f,ticktext=feat_dr["ivl"],tickfont=dict(size=adaptive_font(n_feats))),
+            xaxis_title="Distance (Ward)",title=dict(text="Feature Dendrogram",font=dict(size=18)),
             margin=dict(l=adaptive_margin_l(feat_dr["ivl"])))
-    except Exception:
-        feat_dfig = go.Figure(); pfig(feat_dfig, 350)
+    except: feat_dfig = go.Figure(); pfig(feat_dfig, 350)
 
-    # K-means clustering of features
-    k_vals = min(6, max(2, n_feats // 5))  # auto K
+    k_vals = min(6,max(2,n_feats//5))
     try:
-        km = KMeans(n_clusters=k_vals, random_state=42, n_init=10).fit(feat_X)
-        km_labels = km.labels_
-        clust_df = pd.DataFrame({"Feature": df.index, "Cluster": km_labels})
-        # Feature cluster heatmap: mean ratio per cluster x group
+        km = KMeans(n_clusters=k_vals,random_state=42,n_init=10).fit(feat_X)
         groups_list = sorted(meta["Group"].unique())
         group_means = pd.DataFrame(index=df.index)
         for g in groups_list:
             samps_g = meta[meta["Group"]==g]["Sample"].tolist()
             cols_g = [c for c in df.columns if c in samps_g]
             if cols_g: group_means[g] = df[cols_g].mean(axis=1)
-        group_means["Cluster"] = km_labels
+        group_means["Cluster"] = km.labels_
         cluster_means = group_means.groupby("Cluster")[groups_list].mean()
+        km_hm = phm(cluster_means.values,[f"Cluster {i}" for i in cluster_means.index],
+                     groups_list,cs="Greens",title=f"Feature Clusters (K={k_vals}) x Group Means",h=max(250,k_vals*50))
+    except: km_hm = go.Figure(); pfig(km_hm, 300)
 
-        km_hm = phm(cluster_means.values,
-                     [f"Cluster {i}" for i in cluster_means.index],
-                     groups_list, cs="Greens",
-                     title=f"Feature Clusters (K={k_vals}) x Group Means",
-                     h=max(250, k_vals*50))
-    except Exception:
-        km_hm = go.Figure(); pfig(km_hm, 300)
-        clust_df = pd.DataFrame()
-
-    # Biclustering heatmap (features x samples, reordered)
     try:
-        Z = df.fillna(0).values
-        n_bic = min(4, n_feats, X.shape[0])
-        if n_bic >= 2 and Z.shape[0] >= 4 and Z.shape[1] >= 4:
-            bic = SpectralBiclustering(n_clusters=n_bic, random_state=42)
-            bic.fit(Z)
-            row_order = np.argsort(bic.row_labels_)
-            col_order = np.argsort(bic.column_labels_)
-            Z_reord = Z[row_order][:, col_order]
-            feats_reord = [df.index[i] for i in row_order]
-            samps_reord = [df.columns[i] for i in col_order]
-            bic_hm = phm(Z_reord, feats_reord, samps_reord, cs="YlGnBu",
-                         title=f"Biclustering (n={n_bic}) — Features x Samples",
-                         h=max(500, n_feats*12))
-        else:
-            bic_hm = go.Figure(); pfig(bic_hm, 300)
-    except Exception:
-        bic_hm = go.Figure(); pfig(bic_hm, 300)
+        Z = df.fillna(0).values; n_bic = min(4,n_feats,X.shape[0])
+        if n_bic>=2 and Z.shape[0]>=4 and Z.shape[1]>=4:
+            bic = SpectralBiclustering(n_clusters=n_bic,random_state=42); bic.fit(Z)
+            ro = np.argsort(bic.row_labels_); co = np.argsort(bic.column_labels_)
+            bic_hm = phm(Z[ro][:,co],[df.index[i] for i in ro],[df.columns[i] for i in co],
+                         cs="YlGnBu",title=f"Biclustering (n={n_bic})",h=max(500,n_feats*12))
+        else: bic_hm = go.Figure(); pfig(bic_hm, 300)
+    except: bic_hm = go.Figure(); pfig(bic_hm, 300)
 
     children = [
+        html.P(f"Data source: {src_label} | {df.shape[0]} features x {df.shape[1]} samples",
+               style={"color":C["accent"],"fontWeight":"600","fontSize":"14px","marginBottom":"8px"}),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=fig1)]),
             html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=bfig)]),
@@ -1665,17 +1748,12 @@ def tab_pca(d):
     if n_comp >= 3:
         children.append(html.Div(style=CS, children=[dcc.Graph(figure=fig3d)]))
     children.append(html.Div(style=CS, children=[_st("Sample Correlation"), dcc.Graph(figure=chm)]))
-
-    # Feature clustering section
-    children.append(html.H3("Feature Clustering", style={"color":C["accent"],"marginTop":"32px","marginBottom":"8px","fontSize":"20px"}))
+    children.append(html.H3("Feature Clustering",style={"color":C["accent"],"marginTop":"32px","marginBottom":"8px","fontSize":"20px"}))
     children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
         html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=feat_dfig)]),
         html.Div(style={**CS,"flex":"1","minWidth":"350px"}, children=[dcc.Graph(figure=km_hm)]),
     ]))
-    children.append(html.Div(style=CS, children=[
-        _st("Biclustering","Spectral biclustering — features and samples reordered together"),
-        dcc.Graph(figure=bic_hm)]))
-
+    children.append(html.Div(style=CS, children=[_st("Biclustering","Spectral biclustering"),dcc.Graph(figure=bic_hm)]))
     return html.Div(children)
 
 
@@ -1711,8 +1789,19 @@ def tab_stats(d):
     # Check if Design column exists (for stratified analysis)
     designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
 
+    # Data source selector
+    has_areas = "areas_norm" in d and d["areas_norm"] is not None
+    source_opts = [{"label":"Ratios (default)","value":"ratios"}]
+    if has_areas:
+        source_opts.append({"label":"Areas (log2+QN)","value":"areas_norm"})
+        source_opts.append({"label":"Areas (log2 only)","value":"areas_log2"})
+
     # Build filter controls
-    filter_children = []
+    filter_children = [
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Data Source"),
+            dcc.Dropdown(id="stats-source",options=source_opts,value="ratios",clearable=False,style=DS)]),
+    ]
     if designs:
         filter_children.append(html.Div(style={"flex":"1","minWidth":"220px"}, children=[
             _lbl("Design / Strain"),
@@ -1755,16 +1844,17 @@ def tab_stats(d):
 
 
 @callback(Output("stats-out","children"),
-          Input("stats-design","value"), Input("stats-show","value"),
+          Input("stats-source","value"), Input("stats-design","value"), Input("stats-show","value"),
           Input("stats-classify","value"), Input("stats-fdr","value"),
           Input("cur-exp","data"), prevent_initial_call=True)
-def _stats_filtered(design, show, classify, fdr_log, exp):
+def _stats_filtered(source, design, show, classify, fdr_log, exp):
     t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
-    df = d.get("hptm", d.get("hpf"))
+    df = _get_data_source(d, source)
     meta = d.get("metadata", pd.DataFrame())
-    if df is None or meta.empty: return html.P("No data.")
+    is_log = source in ("areas_norm", "areas_log2")
+    if df is None or meta.empty: return html.P("No data for selected source.")
 
     fdr_thresh = 10 ** fdr_log if fdr_log else 0.05
 
@@ -1778,7 +1868,7 @@ def _stats_filtered(design, show, classify, fdr_log, exp):
     if len(groups) < 2:
         return html.P(f"Only {len(groups)} group(s). Need >= 2.", style={"color":C["red"],"padding":"20px"})
 
-    res = robust_group_test(df, meta, groups)
+    res = robust_group_test(df, meta, groups, is_log=is_log)
     if res.empty: return html.P("Could not compute statistics.", style={"color":C["red"]})
 
     res = _enrich_stats(res, groups)
@@ -1787,11 +1877,14 @@ def _stats_filtered(design, show, classify, fdr_log, exp):
     fc_list = []
     for _, row in res.iterrows():
         means = [row.get(f"mean_{g}", np.nan) for g in groups]
-        means = [m for m in means if not np.isnan(m) and m > 0]
-        if len(means) >= 2:
-            fc_list.append(np.log2(max(means) / min(means)))
+        means = [m for m in means if not np.isnan(m)]
+        if is_log:
+            # Data already log-scale: FC = max - min (difference of logs)
+            means = [m for m in means if np.isfinite(m)]
+            fc_list.append(max(means) - min(means) if len(means) >= 2 else 0)
         else:
-            fc_list.append(0)
+            means = [m for m in means if m > 0]
+            fc_list.append(np.log2(max(means) / min(means)) if len(means) >= 2 else 0)
     res["maxLog2FC"] = fc_list
 
     n_total = len(res)
@@ -2207,10 +2300,13 @@ def tab_cmp(d):
             _lbl("Group B"),
             dcc.Dropdown(id="cmp-b",options=[{"label":g,"value":g} for g in groups],
                          value=groups[1] if len(groups)>1 else groups[0],clearable=False,style=DS)]),
-        html.Div(style={"flex":"1","minWidth":"160px"}, children=[
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
             _lbl("Data Level"),
-            dcc.Dropdown(id="cmp-level",options=[{"label":"hPTM (single)","value":"hptm"},
-                         {"label":"hPF (peptidoforms)","value":"hpf"}],
+            dcc.Dropdown(id="cmp-level",options=[{"label":"hPTM (single, ratios)","value":"hptm"},
+                         {"label":"hPF (peptidoforms, ratios)","value":"hpf"}] +
+                         ([{"label":"hPF Areas (log2+QN)","value":"areas_norm"},
+                           {"label":"hPF Areas (log2)","value":"areas_log2"}]
+                          if "areas_norm" in d and d["areas_norm"] is not None else []),
                          value="hptm",clearable=False,style=DS)]),
         html.Div(style={"flex":"1","minWidth":"140px"}, children=[
             _lbl("Show"),
@@ -2257,13 +2353,14 @@ def _cmp(ga, gb, level, show, classify, fdr_log, exp):
     t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
-    df = d.get(level, d.get("hptm", d.get("hpf")))
+    df = _get_data_source(d, level)
     meta = d["metadata"]
+    is_log = level in ("areas_norm", "areas_log2")
     if df is None or df.empty: return html.P("No data for level.")
 
     fdr_thresh = 10 ** fdr_log if fdr_log else 0.05
 
-    mw = pairwise_mw(df, meta, ga, gb)
+    mw = pairwise_mw(df, meta, ga, gb, is_log=is_log)
     if mw.empty: return html.P("Could not compute comparison.")
 
     # Add classification columns
@@ -2379,9 +2476,10 @@ def _cmp(ga, gb, level, show, classify, fdr_log, exp):
           State("cur-exp","data"), prevent_initial_call=True)
 def _cmp_export(n, ga, gb, level, exp):
     if not n or not exp or exp not in EXP_DATA: return no_update
-    d = EXP_DATA[exp]; df = d.get(level, d.get("hptm")); meta = d["metadata"]
+    d = EXP_DATA[exp]; df = _get_data_source(d, level); meta = d["metadata"]
+    is_log = level in ("areas_norm", "areas_log2")
     if df is None: return no_update
-    mw = pairwise_mw(df, meta, ga, gb)
+    mw = pairwise_mw(df, meta, ga, gb, is_log=is_log)
     if mw.empty: return no_update
     h_col, t_col = [], []
     for _, row in mw.iterrows():
@@ -2660,7 +2758,7 @@ def _log_export(n, exp):
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.5")
+    print("  EpiProfile-Plants Dashboard v3.6")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
