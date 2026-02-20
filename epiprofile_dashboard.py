@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.3 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.4 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -55,7 +55,7 @@ ALT_RATIOS = {
     },
 }
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.3")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.4")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -82,8 +82,34 @@ C = {
     "muted":"#94a3b8","warn":"#d97706","h3":"#7c3aed","h4":"#0891b2",
     "header_bg":"linear-gradient(135deg, #166534 0%, #15803d 40%, #22c55e 100%)",
 }
-GC = ["#16a34a","#059669","#d97706","#dc2626","#0891b2","#7c3aed","#db2777",
-      "#0d9488","#ea580c","#4338ca","#4f46e5","#ca8a04","#9333ea","#2563eb","#c026d3"]
+# ---------- COLOR PALETTES (ggsci-inspired) ----------
+PALETTES = {
+    "EpiProfile (default)": ["#16a34a","#059669","#d97706","#dc2626","#0891b2","#7c3aed","#db2777",
+                              "#0d9488","#ea580c","#4338ca","#4f46e5","#ca8a04","#9333ea","#2563eb","#c026d3"],
+    "Simpsons":   ["#FED439","#709AE1","#8A9197","#D2AF81","#FD7446","#D5E4A2","#197EC0",
+                   "#F05C3B","#46732E","#71D0F5","#370335","#075149","#C80813","#91331F","#1A9993"],
+    "Futurama":   ["#FF6F00","#C71000","#008EA0","#8A4198","#5A9599","#FF6348","#84D7E1",
+                   "#FF95A8","#3D3B25","#ADE2D0","#1A5354","#3F4041","#543005","#B5E0D4","#C9992D"],
+    "Lancet":     ["#00468B","#ED0000","#42B540","#0099B4","#925E9F","#FDAF91","#AD002A",
+                   "#ADB6B6","#1B1919","#5B7E9A","#C4A35A","#7D5A44","#3B3B3B","#006B38","#A50026"],
+    "NEJM":       ["#BC3C29","#0072B5","#E18727","#20854E","#7876B1","#6F99AD","#FFDC91",
+                   "#EE4C97","#8C564B","#5BB5A2","#D4A168","#9B2335","#2C73D2","#845B97","#B5651D"],
+    "Nature":     ["#E64B35","#4DBBD5","#00A087","#3C5488","#F39B7F","#8491B4","#91D1C2",
+                   "#DC0000","#7E6148","#B09C85","#1B7837","#999999","#5E4FA2","#D95F02","#636363"],
+    "AAAS":       ["#3B4992","#EE0000","#008B45","#631879","#008280","#BB0021","#5F559B",
+                   "#A20056","#808180","#1B1919","#E69F00","#56B4E9","#F0E442","#009E73","#CC79A7"],
+    "JCO":        ["#0073C2","#EFC000","#868686","#CD534C","#7AA6DC","#003C67","#8F7700",
+                   "#3B3B3B","#A73030","#4A6990","#C4A35A","#7D5A44","#006B38","#A50026","#D4A168"],
+    "D3":         ["#1F77B4","#FF7F0E","#2CA02C","#D62728","#9467BD","#8C564B","#E377C2",
+                   "#7F7F7F","#BCBD22","#17BECF","#AEC7E8","#FFBB78","#98DF8A","#FF9896","#C5B0D5"],
+    "UCSCGB":     ["#FF0000","#FF9900","#FFCC00","#00FF00","#6699FF","#CC33FF","#99991E",
+                   "#999999","#FF00CC","#CC0000","#FFCCCC","#FFFF00","#CCFF00","#358000","#0000CC"],
+    "Dark2":      ["#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D",
+                   "#666666","#1F78B4","#33A02C","#FB9A99","#E31A1C","#FDBF6F","#FF7F00","#CAB2D6"],
+    "Set1":       ["#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00","#FFFF33","#A65628",
+                   "#F781BF","#999999","#66C2A5","#FC8D62","#8DA0CB","#E78AC3","#A6D854","#FFD92F"],
+}
+GC = PALETTES["EpiProfile (default)"]
 
 # Plant leaf SVG logo
 LOGO = "data:image/svg+xml;base64," + base64.b64encode(
@@ -102,15 +128,17 @@ LOGO = "data:image/svg+xml;base64," + base64.b64encode(
 
 PUB = go.layout.Template()
 PUB.layout = go.Layout(
-    font=dict(family=FONT, size=12, color=C["text"]),
+    font=dict(family=FONT, size=14, color=C["text"]),
     paper_bgcolor="#fff", plot_bgcolor="#fff",
     xaxis=dict(gridcolor="#f1f5f9",linecolor="#cbd5e1",linewidth=1,mirror=True,
-               title_font=dict(size=13,color="#334155"),tickfont=dict(size=10,color="#64748b")),
+               title_font=dict(size=18,color="#1e293b",weight=700),
+               tickfont=dict(size=13,color="#334155")),
     yaxis=dict(gridcolor="#f1f5f9",linecolor="#cbd5e1",linewidth=1,mirror=True,
-               title_font=dict(size=13,color="#334155"),tickfont=dict(size=10,color="#64748b")),
-    legend=dict(bgcolor="rgba(255,255,255,0.95)",font=dict(size=10,color="#334155"),
+               title_font=dict(size=18,color="#1e293b",weight=700),
+               tickfont=dict(size=13,color="#334155")),
+    legend=dict(bgcolor="rgba(255,255,255,0.95)",font=dict(size=13,color="#334155"),
                 bordercolor="#e5e7eb",borderwidth=1),
-    margin=dict(t=40,b=50,l=60,r=20), colorway=GC)
+    margin=dict(t=50,b=70,l=80,r=25), colorway=GC)
 
 CS = {"backgroundColor":"#fff","borderRadius":"14px","border":"1px solid #d1d5db",
       "padding":"28px","marginBottom":"20px",
@@ -619,7 +647,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                 html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"32px","fontWeight":"800",
                          "letterSpacing":"-0.5px","color":"white","lineHeight":"1.1"}),
                 html.Div(style={"display":"flex","gap":"10px","alignItems":"center","marginTop":"4px"}, children=[
-                    html.Span("PTM Dashboard v3.3", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
+                    html.Span("PTM Dashboard v3.4", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
                     html.Span("|", style={"color":"rgba(255,255,255,0.4)"}),
                     html.Span("hPTM", style={"background":"rgba(255,255,255,0.15)","padding":"2px 8px",
                               "borderRadius":"4px","fontSize":"12px","fontWeight":"600"}),
@@ -637,6 +665,15 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                 dcc.Dropdown(id="exp-sel", options=[{"label":k,"value":k} for k in EXP_DATA],
                              value=DEFAULT_EXP, clearable=False,
                              style={"width":"400px","fontSize":"14px","borderRadius":"10px"}),
+            ]),
+            # Color palette selector
+            html.Div(style={"display":"flex","flexDirection":"column","gap":"4px"}, children=[
+                html.Span("COLOR PALETTE",style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"700",
+                           "letterSpacing":"1.5px","textTransform":"uppercase"}),
+                dcc.Dropdown(id="palette-sel",
+                             options=[{"label":k,"value":k} for k in PALETTES],
+                             value="EpiProfile (default)", clearable=False,
+                             style={"width":"220px","fontSize":"14px","borderRadius":"10px"}),
             ]),
         ]),
         # Upload area (collapsible)
@@ -689,11 +726,12 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
     html.Div(style={"textAlign":"center","padding":"24px","color":"#166534","fontSize":"13px",
                      "background":"linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%)",
                      "borderTop":"2px solid #bbf7d0","marginTop":"40px"}, children=[
-        html.Span("EpiProfile-Plants v3.3 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
+        html.Span("EpiProfile-Plants v3.4 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
         html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
                style={"color":"#15803d","textDecoration":"none","fontWeight":"700"}, target="_blank"),
     ]),
     dcc.Store(id="cur-exp", data=DEFAULT_EXP),
+    dcc.Store(id="cur-palette", data="EpiProfile (default)"),
 ])
 
 
@@ -704,8 +742,19 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
 @callback(Output("cur-exp","data"), Input("exp-sel","value"))
 def _se(e): return e
 
-@callback(Output("desc-bar","children"), Input("cur-exp","data"))
-def _db(e): return EXP_DATA[e].get("description","") if e and e in EXP_DATA else ""
+@callback(Output("cur-palette","data"), Input("palette-sel","value"))
+def _sp(p):
+    global GC
+    if p and p in PALETTES:
+        GC = PALETTES[p]
+        PUB.layout.colorway = GC
+    return p
+
+@callback(Output("desc-bar","children"), Input("cur-exp","data"), Input("cur-palette","data"))
+def _db(e, pal):
+    desc = EXP_DATA[e].get("description","") if e and e in EXP_DATA else ""
+    pal_name = pal if pal else "EpiProfile (default)"
+    return f"{desc}  |  Palette: {pal_name}"
 
 @callback(Output("upload-status","children"),
           Input("upload-pheno","contents"), Input("upload-ratios","contents"),
@@ -752,8 +801,8 @@ def _upload(pheno_content, ratios_content, pheno_name, ratios_name, exp):
 
     return " | ".join(msgs) if msgs else ""
 
-@callback(Output("tab-out","children"), Input("tabs","value"), Input("cur-exp","data"))
-def _rt(tab, exp):
+@callback(Output("tab-out","children"), Input("tabs","value"), Input("cur-exp","data"), Input("cur-palette","data"))
+def _rt(tab, exp, pal):
     if not exp or exp not in EXP_DATA:
         return html.Div("No experiment loaded", style={"color":C["red"],"textAlign":"center","padding":"80px"})
     d = EXP_DATA[exp]
@@ -772,7 +821,13 @@ def _rt(tab, exp):
 # ======================================================================
 
 def pfig(fig, h=500):
-    fig.update_layout(template=PUB, height=h); return fig
+    fig.update_layout(template=PUB, height=h, colorway=GC)
+    # Ensure all axes have large fonts
+    fig.update_xaxes(title_font=dict(size=18, color="#1e293b"),
+                     tickfont=dict(size=13, color="#334155"))
+    fig.update_yaxes(title_font=dict(size=18, color="#1e293b"),
+                     tickfont=dict(size=13, color="#334155"))
+    return fig
 
 def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600, meta=None):
     """Publication heatmap. If meta is provided, adds a group color bar at the top."""
@@ -796,19 +851,19 @@ def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600, meta=None)
             zmin=0, zmax=max(len(groups_unique)-1,1)), row=1, col=1)
         # Main heatmap
         fig.add_trace(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
-            colorbar=dict(thickness=12,len=0.85,title=dict(text=title,side="right",font=dict(size=10)),tickfont=dict(size=9)),
+            colorbar=dict(thickness=14,len=0.85,title=dict(text=title,side="right",font=dict(size=13)),tickfont=dict(size=12)),
             hoverongaps=False, zmin=zmin, zmax=zmax), row=2, col=1)
-        fig.update_layout(template=PUB,height=h,margin=dict(l=180,b=120,t=30,r=30))
-        fig.update_xaxes(tickangle=45,tickfont=dict(size=8), row=2, col=1)
-        fig.update_yaxes(tickfont=dict(size=9),autorange="reversed", row=2, col=1)
-        fig.update_yaxes(tickfont=dict(size=8), row=1, col=1)
+        fig.update_layout(template=PUB,height=h,margin=dict(l=200,b=130,t=35,r=40))
+        fig.update_xaxes(tickangle=45,tickfont=dict(size=11), row=2, col=1)
+        fig.update_yaxes(tickfont=dict(size=11),autorange="reversed", row=2, col=1)
+        fig.update_yaxes(tickfont=dict(size=13), row=1, col=1)
         return fig
     else:
         fig = go.Figure(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
-            colorbar=dict(thickness=12,len=0.9,title=dict(text=title,side="right",font=dict(size=10)),tickfont=dict(size=9)),
+            colorbar=dict(thickness=14,len=0.9,title=dict(text=title,side="right",font=dict(size=13)),tickfont=dict(size=12)),
             hoverongaps=False, zmin=zmin, zmax=zmax))
-        fig.update_layout(template=PUB,height=h,xaxis=dict(tickangle=45,tickfont=dict(size=8)),
-                          yaxis=dict(tickfont=dict(size=9),autorange="reversed"),margin=dict(l=180,b=120,t=30,r=30))
+        fig.update_layout(template=PUB,height=h,xaxis=dict(tickangle=45,tickfont=dict(size=11)),
+                          yaxis=dict(tickfont=dict(size=11),autorange="reversed"),margin=dict(l=200,b=130,t=35,r=40))
         return fig
 
 def cluster_order(df, axis=0):
@@ -978,7 +1033,7 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
     var_s = df.var(axis=1).dropna().sort_values(ascending=False).head(20)
     vf = go.Figure(go.Bar(x=var_s.values, y=var_s.index.tolist(), orientation="h",
                            marker=dict(color=var_s.values, colorscale="Viridis",line=dict(width=0))))
-    pfig(vf, 400); vf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),
+    pfig(vf, 400); vf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
                                       margin=dict(l=200),xaxis_title="Variance")
 
     # Faceted violin by group for top 6 most variable hPF
@@ -1080,7 +1135,7 @@ def tab_hptm(d):
     tp = bdf.groupby("PTM")["Mean"].max().sort_values(ascending=False).head(15).index
     bf = px.bar(bdf[bdf["PTM"].isin(tp)], x="PTM", y="Mean", color="Group", barmode="group",
                 error_y="SD", color_discrete_sequence=GC)
-    pfig(bf, 420); bf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=9)),yaxis_title="Mean Ratio")
+    pfig(bf, 420); bf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=12)),yaxis_title="Mean Ratio")
 
     return html.Div([
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
@@ -1116,7 +1171,7 @@ def tab_qc(d):
     mc = (df.isna()|(df==0)).sum(axis=0)
     mdf = pd.DataFrame({"Sample":mc.index,"Missing":mc.values}).merge(meta, on="Sample", how="left")
     mb = px.bar(mdf, x="Sample", y="Missing", color="Group", title="Missing per Sample", color_discrete_sequence=GC)
-    pfig(mb, 350); mb.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=8)))
+    pfig(mb, 350); mb.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=12)))
 
     dpp = binary.sum(axis=1)
     ch = px.histogram(x=dpp.values, nbins=20, labels={"x":"# Samples Detected","y":"# Features"},
@@ -1131,7 +1186,7 @@ def tab_qc(d):
         ma = ma.merge(meta, on="Sample", how="left")
         ab = px.box(ma, x="Sample", y="Log10Area", color="Group",
                     title="Log10(Area) per Sample", color_discrete_sequence=GC)
-        pfig(ab, 380); ab.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=7)),showlegend=False)
+        pfig(ab, 380); ab.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=11)),showlegend=False)
 
     logs = d.get("logs",[]); nc = sum(1 for e in logs if e["n_warnings"]==0)
     nw = sum(1 for e in logs if e["n_warnings"]>0); tw = sum(e["n_warnings"] for e in logs)
@@ -1185,7 +1240,7 @@ def tab_pca(d):
     fig1.update_traces(marker=dict(size=11,line=dict(width=1.5,color="white")))
     pfig(fig1, 500)
     fig1.update_layout(xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
-                       title=dict(text="PCA - Sample Space",font=dict(size=14)))
+                       title=dict(text="PCA - Sample Space",font=dict(size=18)))
 
     # Add 95% confidence ellipses per group
     for grp in sorted(pc_df["Group"].unique()):
@@ -1211,7 +1266,7 @@ def tab_pca(d):
     pfig(sfig, 350)
     sfig.update_layout(yaxis_title="Variance Explained (%)",
                        yaxis2=dict(title="Cumulative %",overlaying="y",side="right",range=[0,105]),
-                       title=dict(text="Scree Plot",font=dict(size=14)))
+                       title=dict(text="Scree Plot",font=dict(size=18)))
 
     # Loadings biplot
     loadings = pca.components_[:2].T  # features x 2
@@ -1234,10 +1289,10 @@ def tab_pca(d):
                             showarrow=True,arrowhead=2,arrowsize=1.5,arrowwidth=1.5,
                             arrowcolor=C["red"])
         bfig.add_annotation(x=row["PC1"]*scale*1.1,y=row["PC2"]*scale*1.1,
-                            text=row["Feature"],showarrow=False,font=dict(size=8,color=C["red"]))
+                            text=row["Feature"],showarrow=False,font=dict(size=12,color=C["red"]))
     pfig(bfig, 500)
     bfig.update_layout(xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
-                       title=dict(text="PCA Biplot - Samples + Top Loadings",font=dict(size=14)))
+                       title=dict(text="PCA Biplot - Samples + Top Loadings",font=dict(size=18)))
 
     # 3D PCA if available
     fig3d = go.Figure()
@@ -1249,7 +1304,7 @@ def tab_pca(d):
         fig3d.update_layout(scene=dict(
             xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
             zaxis_title=f"PC3 ({ev[2]:.1f}%)"),
-            title=dict(text="3D PCA",font=dict(size=14)))
+            title=dict(text="3D PCA",font=dict(size=18)))
 
     # Dendrogram
     try:
@@ -1262,8 +1317,8 @@ def tab_pca(d):
             dfig.add_trace(go.Scatter(x=xc,y=yc,mode="lines",line=dict(color=C["accent"],width=1.5),showlegend=False))
         tp_ = [5+10*i for i in range(len(dr["ivl"]))]
         dfig.update_layout(template=PUB,height=350,
-            xaxis=dict(tickmode="array",tickvals=tp_,ticktext=dr["ivl"],tickangle=45,tickfont=dict(size=7)),
-            yaxis_title="Distance (Ward)",title=dict(text="Hierarchical Clustering",font=dict(size=14)),margin=dict(b=120))
+            xaxis=dict(tickmode="array",tickvals=tp_,ticktext=dr["ivl"],tickangle=45,tickfont=dict(size=11)),
+            yaxis_title="Distance (Ward)",title=dict(text="Hierarchical Clustering",font=dict(size=18)),margin=dict(b=120))
     except:
         dfig = go.Figure(); pfig(dfig, 350)
 
@@ -1364,7 +1419,7 @@ def tab_stats(d):
             y=sig_res["PTM"].tolist(), orientation="h",
             marker=dict(color=-np.log10(sig_res["KW_FDR"].values+1e-300),colorscale="Reds",line=dict(width=0))))
         pfig(sbf, max(300,len(sig_res)*18))
-        sbf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),
+        sbf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
                           margin=dict(l=180),xaxis_title="-log10(FDR)")
     else:
         sbf = go.Figure(); pfig(sbf, 300)
@@ -1440,7 +1495,7 @@ def _stats_design(design, exp):
             y=sig_res["PTM"].tolist(), orientation="h",
             marker=dict(color=-np.log10(sig_res["KW_FDR"].values+1e-300),colorscale="Reds",line=dict(width=0))))
         pfig(sbf, max(300,len(sig_res)*18))
-        sbf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),margin=dict(l=180),xaxis_title="-log10(FDR)")
+        sbf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),margin=dict(l=180),xaxis_title="-log10(FDR)")
     else:
         sbf = go.Figure(); pfig(sbf, 300)
 
@@ -1507,9 +1562,9 @@ def tab_upset(d):
     uf = go.Figure(go.Bar(x=pair_vals, y=pair_names, orientation="h",
                            marker=dict(color=pair_vals,colorscale="Viridis",line=dict(width=0))))
     pfig(uf, max(400, len(pair_names)*20))
-    uf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=10)),
+    uf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=13)),
                      margin=dict(l=220),xaxis_title="Co-occurrence Count",
-                     title=dict(text="PTM Co-occurrence (from combinatorial hPF)",font=dict(size=14)))
+                     title=dict(text="PTM Co-occurrence (from combinatorial hPF)",font=dict(size=18)))
 
     # ---- Binary detection matrix: which hPTMs are detected per group? ----
     hptm = d.get("hptm")
@@ -1536,9 +1591,9 @@ def tab_upset(d):
         pf = go.Figure(go.Bar(x=[p[1] for p in sp], y=[p[0] for p in sp], orientation="h",
                                marker=dict(color=[p[1] for p in sp], colorscale="Plasma",line=dict(width=0))))
         pfig(pf, max(300, len(sp)*22))
-        pf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),
+        pf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
                          margin=dict(l=250),xaxis_title="# PTMs",
-                         title=dict(text="PTM Detection Patterns Across Groups",font=dict(size=14)))
+                         title=dict(text="PTM Detection Patterns Across Groups",font=dict(size=18)))
     else:
         pf = go.Figure(); pfig(pf, 300)
 
@@ -1559,7 +1614,7 @@ def tab_upset(d):
     ndf = pd.DataFrame(n_mods_per_sample).merge(meta, on="Sample", how="left")
     cf = px.bar(ndf, x="Sample", y=["Single_hPF","Combo_hPF"], color_discrete_sequence=[C["accent"],C["warn"]],
                 title="Peptidoform Complexity per Sample", barmode="stack")
-    pfig(cf, 380); cf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=7)),yaxis_title="# Detected hPF")
+    pfig(cf, 380); cf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=11)),yaxis_title="# Detected hPF")
 
     return html.Div([
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
@@ -1639,12 +1694,12 @@ def tab_region(d):
             marker=dict(size=14, color=hist_colors.get(hist, C["accent"]),
                         line=dict(width=2, color="white")),
             text=hd["Total_hPF"].astype(str), textposition="middle right",
-            textfont=dict(size=10, color=C["text"])))
+            textfont=dict(size=13, color=C["text"])))
     pfig(lf, max(350, len(rdf)*32))
     lf.update_layout(
         xaxis_title="Number of Peptidoforms (hPF)",
-        yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
-        margin=dict(l=130, r=40), title=dict(text="Peptidoforms per Region (Lollipop)", font=dict(size=14)))
+        yaxis=dict(autorange="reversed", tickfont=dict(size=13)),
+        margin=dict(l=160, r=40), title=dict(text="Peptidoforms per Region (Lollipop)", font=dict(size=18)))
 
     # ---- 2. Stacked bar: Single vs Combo vs Unmod per region ----
     sbf = go.Figure()
@@ -1655,8 +1710,8 @@ def tab_region(d):
     sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Unmod"], name="Unmodified",
                           marker_color=C["muted"]))
     pfig(sbf, 400)
-    sbf.update_layout(barmode="stack", xaxis=dict(tickangle=45, tickfont=dict(size=9)),
-                       yaxis_title="# hPF", title=dict(text="Modification Type per Region", font=dict(size=14)))
+    sbf.update_layout(barmode="stack", xaxis=dict(tickangle=45, tickfont=dict(size=12)),
+                       yaxis_title="# hPF", title=dict(text="Modification Type per Region", font=dict(size=18)))
 
     # ---- 3. Lollipop: unique individual PTM marks per region ----
     uf = go.Figure()
@@ -1674,8 +1729,8 @@ def tab_region(d):
     pfig(uf, max(350, len(rdf)*32))
     uf.update_layout(
         xaxis_title="# Unique PTM Marks",
-        yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
-        margin=dict(l=130, r=40), title=dict(text="Unique PTM Marks per Region (Lollipop)", font=dict(size=14)))
+        yaxis=dict(autorange="reversed", tickfont=dict(size=13)),
+        margin=dict(l=160, r=40), title=dict(text="Unique PTM Marks per Region (Lollipop)", font=dict(size=18)))
 
     # ---- 4. Heatmap: mean ratio per region x group ----
     if groups:
@@ -1696,7 +1751,7 @@ def tab_region(d):
         rgp = rgdf.pivot(index="Region", columns="Group", values="Mean_Ratio").fillna(0)
         rghm = phm(rgp.values, rgp.columns.tolist(), rgp.index.tolist(),
                     cs="YlOrRd", title="Mean Ratio", h=max(300, len(rgp)*28))
-        rghm.update_layout(title=dict(text="Mean hPF Ratio: Region x Group", font=dict(size=14)))
+        rghm.update_layout(title=dict(text="Mean hPF Ratio: Region x Group", font=dict(size=18)))
     else:
         rghm = go.Figure(); pfig(rghm, 300)
 
@@ -1818,8 +1873,8 @@ def _cmp(ga, gb, level, exp):
     ff = go.Figure(go.Bar(x=fc_sorted["log2FC"].values, y=fc_sorted["PTM"].tolist(),
                            orientation="h", marker_color=colors))
     pfig(ff, max(400, len(fc_sorted)*14))
-    ff.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),
-                     margin=dict(l=160),xaxis_title=f"log2(FC) {gb}/{ga}")
+    ff.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
+                     margin=dict(l=180),xaxis_title=f"log2(FC) {gb}/{ga}")
     ff.add_vline(x=0,line_color=C["muted"],line_dash="dash")
 
     # MA plot
@@ -2020,7 +2075,7 @@ def _bi(f, exp):
     fig = go.Figure(go.Bar(x=vals.values,y=vals.index.tolist(),orientation="h",
                             marker=dict(color=vals.values,colorscale="Viridis",line=dict(width=0))))
     pfig(fig, max(300,len(vals)*16))
-    fig.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),margin=dict(l=120,t=10),xaxis_title="Ratio")
+    fig.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),margin=dict(l=150,t=10),xaxis_title="Ratio")
     return html.Div([_st("PTM Profile",f"Sample: {f}"), dcc.Graph(figure=fig)])
 
 
@@ -2030,7 +2085,7 @@ def _bi(f, exp):
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.3")
+    print("  EpiProfile-Plants Dashboard v3.4")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
