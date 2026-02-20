@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.1 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.2 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -45,7 +45,7 @@ DEFAULTS = {
     "Ontogeny 1exp (Arabidopsis stages)": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\histone_layouts_ontogeny_1exp",
 }
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.1")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.2")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -555,7 +555,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
             html.Img(src=LOGO, style={"height":"32px","width":"32px"}),
             html.Div([
                 html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"18px","fontWeight":"700","color":C["text"]}),
-                html.Span("PTM Dashboard v3.1 | hPTM / hPF / hDP", style={"color":C["muted"],"fontSize":"11px"}),
+                html.Span("PTM Dashboard v3.2 | hPTM / hPF / hDP", style={"color":C["muted"],"fontSize":"11px"}),
             ]),
         ]),
         html.Div(style={"flex":"1"}),
@@ -578,14 +578,16 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
         dcc.Tab(label="PCA & Clustering", value="tab-pca", style=ts, selected_style=tss),
         dcc.Tab(label="Statistics", value="tab-stats", style=ts, selected_style=tss),
         dcc.Tab(label="UpSet / Co-occurrence", value="tab-upset", style=ts, selected_style=tss),
+        dcc.Tab(label="Region Map", value="tab-region", style=ts, selected_style=tss),
         dcc.Tab(label="Comparisons", value="tab-cmp", style=ts, selected_style=tss),
+        dcc.Tab(label="Phenodata", value="tab-pheno", style=ts, selected_style=tss),
         dcc.Tab(label="Sample Browser", value="tab-browse", style=ts, selected_style=tss),
     ]),
     html.Div(id="tab-out", style={"padding":"24px 32px","maxWidth":"1600px","margin":"0 auto"}),
     # Footer
     html.Div(style={"textAlign":"center","padding":"20px","color":C["muted"],"fontSize":"11px",
                      "borderTop":"1px solid #e5e7eb","marginTop":"40px"}, children=[
-        html.Span("EpiProfile-Plants v3.1 | "),
+        html.Span("EpiProfile-Plants v3.2 | "),
         html.A("GitHub",href="https://github.com/biopelayo/epiprofile-dashboard",
                style={"color":C["accent"],"textDecoration":"none"},target="_blank"),
     ]),
@@ -611,7 +613,8 @@ def _rt(tab, exp):
     try:
         return {"tab-hpf":tab_hpf,"tab-hptm":tab_hptm,"tab-qc":tab_qc,
                 "tab-pca":tab_pca,"tab-stats":tab_stats,"tab-upset":tab_upset,
-                "tab-cmp":tab_cmp,"tab-browse":tab_browse}.get(tab, lambda x: html.Div("?"))(d)
+                "tab-region":tab_region,"tab-cmp":tab_cmp,"tab-pheno":tab_pheno,
+                "tab-browse":tab_browse}.get(tab, lambda x: html.Div("?"))(d)
     except Exception as e:
         import traceback
         return html.Div([html.H3("Error",style={"color":C["red"]}),
@@ -624,13 +627,42 @@ def _rt(tab, exp):
 def pfig(fig, h=500):
     fig.update_layout(template=PUB, height=h); return fig
 
-def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600):
-    fig = go.Figure(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
-        colorbar=dict(thickness=12,len=0.9,title=dict(text=title,side="right",font=dict(size=10)),tickfont=dict(size=9)),
-        hoverongaps=False, zmin=zmin, zmax=zmax))
-    fig.update_layout(template=PUB,height=h,xaxis=dict(tickangle=45,tickfont=dict(size=8)),
-                      yaxis=dict(tickfont=dict(size=9),autorange="reversed"),margin=dict(l=180,b=120,t=30,r=30))
-    return fig
+def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600, meta=None):
+    """Publication heatmap. If meta is provided, adds a group color bar at the top."""
+    if meta is not None and not meta.empty:
+        # Build group annotation row
+        sample_groups = {}
+        for _, row in meta.iterrows():
+            sample_groups[row["Sample"]] = row["Group"]
+        groups_unique = sorted(set(sample_groups.values()))
+        gc_map = {g: GC[i % len(GC)] for i, g in enumerate(groups_unique)}
+        group_labels = [sample_groups.get(s, "?") for s in x]
+        group_colors = [gc_map.get(g, "#999") for g in group_labels]
+
+        fig = make_subplots(rows=2, cols=1, row_heights=[0.03, 0.97],
+                            vertical_spacing=0.005, shared_xaxes=True)
+        # Group bar
+        fig.add_trace(go.Heatmap(
+            z=[[groups_unique.index(g) if g in groups_unique else 0 for g in group_labels]],
+            x=x, y=["Group"], colorscale=[[i/(max(len(groups_unique)-1,1)),gc_map[g]] for i,g in enumerate(groups_unique)],
+            showscale=False, hovertext=[[g for g in group_labels]], hoverinfo="text",
+            zmin=0, zmax=max(len(groups_unique)-1,1)), row=1, col=1)
+        # Main heatmap
+        fig.add_trace(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
+            colorbar=dict(thickness=12,len=0.85,title=dict(text=title,side="right",font=dict(size=10)),tickfont=dict(size=9)),
+            hoverongaps=False, zmin=zmin, zmax=zmax), row=2, col=1)
+        fig.update_layout(template=PUB,height=h,margin=dict(l=180,b=120,t=30,r=30))
+        fig.update_xaxes(tickangle=45,tickfont=dict(size=8), row=2, col=1)
+        fig.update_yaxes(tickfont=dict(size=9),autorange="reversed", row=2, col=1)
+        fig.update_yaxes(tickfont=dict(size=8), row=1, col=1)
+        return fig
+    else:
+        fig = go.Figure(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
+            colorbar=dict(thickness=12,len=0.9,title=dict(text=title,side="right",font=dict(size=10)),tickfont=dict(size=9)),
+            hoverongaps=False, zmin=zmin, zmax=zmax))
+        fig.update_layout(template=PUB,height=h,xaxis=dict(tickangle=45,tickfont=dict(size=8)),
+                          yaxis=dict(tickfont=dict(size=9),autorange="reversed"),margin=dict(l=180,b=120,t=30,r=30))
+        return fig
 
 def cluster_order(df, axis=0):
     try:
@@ -791,9 +823,9 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
     n_shown = len(df)
     n_total = len(hpf)
 
-    # Heatmap
+    # Heatmap with group color bar
     hm = phm(df.values, df.columns.tolist(), df.index.tolist(),
-             cs="Viridis", title="Ratio", h=max(400, len(df)*7))
+             cs="Viridis", title="Ratio", h=max(400, len(df)*7), meta=meta)
 
     # Top variable
     var_s = df.var(axis=1).dropna().sort_values(ascending=False).head(20)
@@ -801,6 +833,23 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
                            marker=dict(color=var_s.values, colorscale="Viridis",line=dict(width=0))))
     pfig(vf, 400); vf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)),
                                       margin=dict(l=200),xaxis_title="Variance")
+
+    # Faceted violin by group for top 6 most variable hPF
+    top_for_violin = var_s.head(6).index.tolist()
+    vml = []
+    for ptm in top_for_violin:
+        if ptm in df.index:
+            v = df.loc[ptm].T.reset_index(); v.columns = ["Sample","Ratio"]
+            v["hPF"] = ptm; v = v.merge(meta, on="Sample"); vml.append(v)
+    if vml:
+        vmdf = pd.concat(vml, ignore_index=True)
+        viol_fig = px.violin(vmdf, x="Group", y="Ratio", color="Group", facet_col="hPF",
+                             facet_col_wrap=3, box=True, points="all", color_discrete_sequence=GC)
+        pfig(viol_fig, 550)
+        viol_fig.update_layout(showlegend=False)
+        viol_fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1][:30]))
+    else:
+        viol_fig = go.Figure(); pfig(viol_fig, 300)
 
     # Box for top PTM
     top = var_s.index[0] if len(var_s) > 0 else df.index[0]
@@ -812,7 +861,7 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
 
     return html.Div([
         html.Div(style=CS, children=[
-            _st(f"Peptidoform Heatmap", f"Showing {n_shown} of {n_total} hPF | {df.shape[1]} samples"),
+            _st(f"Peptidoform Heatmap", f"Showing {n_shown} of {n_total} hPF | {df.shape[1]} samples | Group color bar on top"),
             dcc.Graph(figure=hm),
         ]),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
@@ -820,6 +869,10 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
                 _st("Top Variable Peptidoforms"), dcc.Graph(figure=vf)]),
             html.Div(style={**CS,"flex":"1","minWidth":"300px"}, children=[
                 _st(f"Distribution: {top}"), dcc.Graph(figure=bf)]),
+        ]),
+        html.Div(style=CS, children=[
+            _st("Faceted Violin: Top Variable hPF by Group","Top 6 most variable peptidoforms"),
+            dcc.Graph(figure=viol_fig),
         ]),
         html.Div(style=CS, children=[
             _st("Filtered Data Table","Editable | Sortable | Filterable | Export CSV"),
@@ -843,27 +896,29 @@ def tab_hptm(d):
     meta_s = meta.sort_values(["Group","Tissue","Replicate"])
     co = [s for s in meta_s["Sample"] if s in df.columns]; df = df[co]
 
-    # Clustered heatmap
+    # Clustered heatmap with group color bar
     ro = cluster_order(df, 0); df_c = df.loc[ro]
     hm = phm(df_c.values, df_c.columns.tolist(), df_c.index.tolist(),
-             cs="RdBu_r", title="Ratio", h=max(500, len(df)*11))
+             cs="RdBu_r", title="Ratio", h=max(500, len(df)*11), meta=meta)
 
-    # Z-score
+    # Z-score with group color bar
     zs = df_c.apply(lambda r: (r-r.mean())/(r.std()+1e-10), axis=1)
     zhm = phm(zs.values, zs.columns.tolist(), zs.index.tolist(),
-              cs="RdBu_r", title="Z-score", zmin=-3, zmax=3, h=max(500, len(df)*11))
+              cs="RdBu_r", title="Z-score", zmin=-3, zmax=3, h=max(500, len(df)*11), meta=meta)
 
-    # Violin for key marks
+    # Faceted violin: key marks by group
     km = [m for m in ["H3K9me2","H3K14ac","H3K27me3","H3K4me1","H4K16ac","H3K9ac",
-                       "H3K36me1","H3K27me1","H4K20me1","H3K4me3"] if m in df.index][:6]
+                       "H3K36me1","H3K27me1","H4K20me1","H3K4me3"] if m in df.index][:8]
     if km:
         ml = []
         for m in km:
             v = df.loc[m]; t = pd.DataFrame({"Sample":v.index,"Ratio":v.values,"PTM":m})
             t = t.merge(meta, on="Sample"); ml.append(t)
-        vf = px.violin(pd.concat(ml), x="PTM", y="Ratio", color="Group", box=True, points="all",
-                        color_discrete_sequence=GC)
-        pfig(vf, 420); vf.update_layout(xaxis_title="",yaxis_title="Ratio")
+        vdata = pd.concat(ml)
+        vf = px.violin(vdata, x="Group", y="Ratio", color="Group", facet_col="PTM",
+                        facet_col_wrap=4, box=True, points="all", color_discrete_sequence=GC)
+        pfig(vf, 600); vf.update_layout(showlegend=False)
+        vf.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
     else:
         vf = go.Figure(); pfig(vf, 420)
 
@@ -883,16 +938,14 @@ def tab_hptm(d):
     return html.Div([
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"450px"}, children=[
-                _st("Clustered Heatmap","Ward linkage | hPTM ratios"), dcc.Graph(figure=hm)]),
+                _st("Clustered Heatmap","Ward linkage | hPTM ratios | Group color bar"), dcc.Graph(figure=hm)]),
             html.Div(style={**CS,"flex":"1","minWidth":"450px"}, children=[
-                _st("Z-score Heatmap","Row-wise normalization"), dcc.Graph(figure=zhm)]),
+                _st("Z-score Heatmap","Row-wise normalization | Group color bar"), dcc.Graph(figure=zhm)]),
         ]),
-        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[
-                _st("Key hPTM Distributions","Violin + box by group"), dcc.Graph(figure=vf)]),
-            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[
-                _st("Top 15 hPTMs by Group Mean +/- SD"), dcc.Graph(figure=bf)]),
-        ]),
+        html.Div(style=CS, children=[
+            _st("Key hPTM Faceted Violins","Faceted by PTM, colored by group"), dcc.Graph(figure=vf)]),
+        html.Div(style=CS, children=[
+            _st("Top 15 hPTMs by Group Mean +/- SD"), dcc.Graph(figure=bf)]),
         html.Div(style=CS, children=[
             _st("hPTM Data","Editable | Sortable | Filterable | Export CSV"),
             make_table(df, "hptm-table")]),
@@ -1027,7 +1080,7 @@ def tab_pca(d):
         bfig.add_trace(go.Scatter(x=gd["PC1"],y=gd["PC2"],mode="markers",name=grp,
                                    marker=dict(size=8,opacity=0.4),showlegend=True))
     # Plot loading arrows
-    scale = max(abs(coords[:,:2]).max()) / max(abs(loadings).max()+1e-10) * 0.8
+    scale = np.abs(coords[:,:2]).max() / (np.abs(loadings).max()+1e-10) * 0.8
     for _, row in top_load.iterrows():
         bfig.add_annotation(ax=0,ay=0,x=row["PC1"]*scale,y=row["PC2"]*scale,
                             xref="x",yref="y",axref="x",ayref="y",
@@ -1275,6 +1328,179 @@ def tab_upset(d):
 
 
 # ======================================================================
+# TAB: REGION MAP (Lollipop / modification landscape per region)
+# ======================================================================
+
+def tab_region(d):
+    hpf_meta = d.get("hpf_meta", pd.DataFrame())
+    hpf = d.get("hpf", pd.DataFrame())
+    hdp_list = d.get("hdp_list", [])
+    meta = d.get("metadata", pd.DataFrame())
+
+    if hpf_meta.empty or hpf.empty:
+        return html.Div(style=CS, children=[html.P("No peptidoform data for region mapping.")])
+
+    groups = sorted(meta["Group"].unique()) if not meta.empty else []
+
+    # ---- 1. Lollipop: number and type of modifications per region ----
+    region_stats = []
+    for region in sorted(hpf_meta["region"].unique()):
+        rmeta = hpf_meta[hpf_meta["region"] == region]
+        n_total = len(rmeta)
+        n_combo = int(rmeta["is_combo"].sum())
+        n_single = int(((~rmeta["is_combo"]) & (rmeta["modification"] != "unmod")).sum())
+        n_unmod = int((rmeta["modification"] == "unmod").sum())
+        # Mean ratio across all samples for this region
+        rnames = rmeta["name"].tolist()
+        rdata = hpf.loc[[n for n in rnames if n in hpf.index]]
+        mean_ratio = rdata.values.mean() if not rdata.empty else 0
+        # Collect individual PTM types in this region
+        all_ptms = []
+        for _, row in rmeta.iterrows():
+            if isinstance(row.get("individual_ptms"), list):
+                all_ptms.extend(row["individual_ptms"])
+        unique_ptms = sorted(set(all_ptms))
+        # Get histone
+        histone = rmeta["histone"].iloc[0] if len(rmeta) > 0 else ""
+        # Find hDP header info
+        seq = ""
+        for hdp in hdp_list:
+            if hdp.get("region") == region:
+                seq = hdp.get("sequence", ""); break
+
+        region_stats.append({
+            "Region": region, "Histone": histone, "Sequence": seq,
+            "Total_hPF": n_total, "Single": n_single, "Combo": n_combo,
+            "Unmod": n_unmod, "Mean_Ratio": round(mean_ratio, 4),
+            "Unique_PTMs": ", ".join(unique_ptms), "n_unique_PTMs": len(unique_ptms),
+        })
+
+    rdf = pd.DataFrame(region_stats).sort_values("Region")
+
+    # Lollipop plot: Total modifications per region (stem + dot)
+    lf = go.Figure()
+    for _, row in rdf.iterrows():
+        region = row["Region"]
+        # Stem (line from 0 to value)
+        lf.add_trace(go.Scatter(
+            x=[0, row["Total_hPF"]], y=[region, region],
+            mode="lines", line=dict(color=C["accent"], width=2),
+            showlegend=False, hoverinfo="skip"))
+    # Dots at the end (colored by histone)
+    hist_colors = {"H3": C["h3"], "H3.3": C["warn"], "H4": C["h4"], "Other": C["muted"]}
+    for hist in rdf["Histone"].unique():
+        hd = rdf[rdf["Histone"] == hist]
+        lf.add_trace(go.Scatter(
+            x=hd["Total_hPF"], y=hd["Region"],
+            mode="markers+text", name=hist,
+            marker=dict(size=14, color=hist_colors.get(hist, C["accent"]),
+                        line=dict(width=2, color="white")),
+            text=hd["Total_hPF"].astype(str), textposition="middle right",
+            textfont=dict(size=10, color=C["text"])))
+    pfig(lf, max(350, len(rdf)*32))
+    lf.update_layout(
+        xaxis_title="Number of Peptidoforms (hPF)",
+        yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
+        margin=dict(l=130, r=40), title=dict(text="Peptidoforms per Region (Lollipop)", font=dict(size=14)))
+
+    # ---- 2. Stacked bar: Single vs Combo vs Unmod per region ----
+    sbf = go.Figure()
+    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Single"], name="Single-mod",
+                          marker_color=C["green"]))
+    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Combo"], name="Combinatorial",
+                          marker_color=C["warn"]))
+    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Unmod"], name="Unmodified",
+                          marker_color=C["muted"]))
+    pfig(sbf, 400)
+    sbf.update_layout(barmode="stack", xaxis=dict(tickangle=45, tickfont=dict(size=9)),
+                       yaxis_title="# hPF", title=dict(text="Modification Type per Region", font=dict(size=14)))
+
+    # ---- 3. Lollipop: unique individual PTM marks per region ----
+    uf = go.Figure()
+    for _, row in rdf.iterrows():
+        region = row["Region"]
+        uf.add_trace(go.Scatter(
+            x=[0, row["n_unique_PTMs"]], y=[region, region],
+            mode="lines", line=dict(color=C["h3"], width=2),
+            showlegend=False, hoverinfo="skip"))
+    uf.add_trace(go.Scatter(
+        x=rdf["n_unique_PTMs"], y=rdf["Region"], mode="markers",
+        marker=dict(size=12, color=C["h3"], symbol="diamond",
+                    line=dict(width=1.5, color="white")),
+        text=rdf["Unique_PTMs"], hoverinfo="text+x", name="Unique marks"))
+    pfig(uf, max(350, len(rdf)*32))
+    uf.update_layout(
+        xaxis_title="# Unique PTM Marks",
+        yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
+        margin=dict(l=130, r=40), title=dict(text="Unique PTM Marks per Region (Lollipop)", font=dict(size=14)))
+
+    # ---- 4. Heatmap: mean ratio per region x group ----
+    if groups:
+        rg_data = []
+        for region in rdf["Region"]:
+            rmeta_r = hpf_meta[hpf_meta["region"] == region]
+            rnames = rmeta_r["name"].tolist()
+            rdata = hpf.loc[[n for n in rnames if n in hpf.index]]
+            for g in groups:
+                samps = meta[meta["Group"] == g]["Sample"].tolist()
+                cols = [c for c in rdata.columns if c in samps]
+                if cols:
+                    gm = rdata[cols].mean().mean()
+                else:
+                    gm = np.nan
+                rg_data.append({"Region": region, "Group": g, "Mean_Ratio": gm})
+        rgdf = pd.DataFrame(rg_data)
+        rgp = rgdf.pivot(index="Region", columns="Group", values="Mean_Ratio").fillna(0)
+        rghm = phm(rgp.values, rgp.columns.tolist(), rgp.index.tolist(),
+                    cs="YlOrRd", title="Mean Ratio", h=max(300, len(rgp)*28))
+        rghm.update_layout(title=dict(text="Mean hPF Ratio: Region x Group", font=dict(size=14)))
+    else:
+        rghm = go.Figure(); pfig(rghm, 300)
+
+    # ---- 5. Faceted box: top regions by group ----
+    if groups:
+        top_regions = rdf.nlargest(6, "Total_hPF")["Region"].tolist()
+        bml = []
+        for region in top_regions:
+            rmeta_r = hpf_meta[hpf_meta["region"] == region]
+            rnames = rmeta_r["name"].tolist()
+            rdata = hpf.loc[[n for n in rnames if n in hpf.index]]
+            for col in rdata.columns:
+                v = rdata[col].mean()
+                bml.append({"Region": region, "Sample": col, "Mean_hPF_Ratio": v})
+        bmdf = pd.DataFrame(bml).merge(meta, on="Sample", how="left")
+        rbf = px.box(bmdf, x="Group", y="Mean_hPF_Ratio", color="Group", facet_col="Region",
+                      facet_col_wrap=3, points="all", color_discrete_sequence=GC)
+        pfig(rbf, 550)
+        rbf.update_layout(showlegend=False)
+        rbf.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    else:
+        rbf = go.Figure(); pfig(rbf, 300)
+
+    return html.Div([
+        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
+            _sc("Regions", str(len(rdf)), C["accent"]),
+            _sc("Total hPF", str(int(rdf["Total_hPF"].sum())), C["h3"]),
+            _sc("Unique PTM Marks", str(int(rdf["n_unique_PTMs"].sum())), C["warn"]),
+        ]),
+        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=lf)]),
+            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=uf)]),
+        ]),
+        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=sbf)]),
+            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=rghm)]),
+        ]),
+        html.Div(style=CS, children=[
+            _st("Top Regions by Group","Faceted box plots for the 6 most diverse regions"),
+            dcc.Graph(figure=rbf)]),
+        html.Div(style=CS, children=[
+            _st("Region Summary Table","Peptide regions with modification counts"),
+            make_table(rdf, "region-table")]),
+    ])
+
+
+# ======================================================================
 # TAB: COMPARISONS
 # ======================================================================
 
@@ -1365,6 +1591,126 @@ def _cmp(ga, gb, level, exp):
 
 
 # ======================================================================
+# TAB: PHENODATA / METADATA
+# ======================================================================
+
+def tab_pheno(d):
+    meta = d.get("metadata", pd.DataFrame())
+    phenodata = d.get("phenodata")
+    hptm = d.get("hptm")
+    hpf = d.get("hpf", pd.DataFrame())
+
+    if meta.empty:
+        return html.Div(style=CS, children=[html.P("No metadata available.")])
+
+    # ---- 1. Phenodata table (editable) ----
+    # Enrich metadata with processing info
+    enriched = meta.copy()
+    # Add processing order (based on position in sample list)
+    enriched.insert(0, "Order", range(1, len(enriched)+1))
+    # Add batch info if available
+    if "Batch" not in enriched.columns:
+        enriched["Batch"] = "A"
+
+    # Add data quality columns from hPTM if available
+    if hptm is not None:
+        det_counts = []
+        total_ratios = []
+        for s in enriched["Sample"]:
+            if s in hptm.columns:
+                vals = hptm[s].dropna()
+                det_counts.append(int((vals > 0).sum()))
+                total_ratios.append(round(vals.sum(), 4))
+            else:
+                det_counts.append(0)
+                total_ratios.append(0)
+        enriched["Detected_hPTMs"] = det_counts
+        enriched["Sum_Ratios"] = total_ratios
+
+    if not hpf.empty:
+        hpf_det = []
+        for s in enriched["Sample"]:
+            if s in hpf.columns:
+                vals = hpf[s].dropna()
+                hpf_det.append(int((vals > 0).sum()))
+            else:
+                hpf_det.append(0)
+        enriched["Detected_hPF"] = hpf_det
+
+    # ---- 2. Group distribution plot ----
+    gc = meta["Group"].value_counts().reset_index()
+    gc.columns = ["Group", "Count"]
+    gbar = px.bar(gc, x="Group", y="Count", color="Group", color_discrete_sequence=GC,
+                   text="Count", title="Samples per Group")
+    pfig(gbar, 350)
+    gbar.update_traces(textposition="outside")
+    gbar.update_layout(showlegend=False)
+
+    # ---- 3. Tissue distribution ----
+    if "Tissue" in meta.columns and meta["Tissue"].nunique() > 1:
+        tc = meta.groupby(["Group","Tissue"]).size().reset_index(name="Count")
+        tbar = px.bar(tc, x="Group", y="Count", color="Tissue", barmode="stack",
+                       color_discrete_sequence=GC[5:], title="Tissue Distribution by Group")
+        pfig(tbar, 350)
+    else:
+        tbar = go.Figure(); pfig(tbar, 100)
+        tbar.update_layout(height=100)
+
+    # ---- 4. Batch / processing order plot ----
+    if hptm is not None:
+        # Sum of ratios per sample in processing order
+        order_df = enriched[["Order","Sample","Group","Sum_Ratios"]].copy()
+        obf = px.scatter(order_df, x="Order", y="Sum_Ratios", color="Group",
+                          hover_name="Sample", color_discrete_sequence=GC,
+                          title="Total PTM Signal vs Processing Order (batch effect check)")
+        pfig(obf, 380)
+        obf.update_traces(marker=dict(size=10, line=dict(width=1, color="white")))
+    else:
+        obf = go.Figure(); pfig(obf, 100)
+
+    # ---- 5. Detection quality per group ----
+    if "Detected_hPTMs" in enriched.columns:
+        dbf = px.box(enriched, x="Group", y="Detected_hPTMs", color="Group", points="all",
+                      color_discrete_sequence=GC, title="hPTMs Detected per Sample by Group")
+        pfig(dbf, 380)
+        dbf.update_layout(showlegend=False)
+    else:
+        dbf = go.Figure(); pfig(dbf, 100)
+
+    # ---- 6. If raw phenodata file exists, show it too ----
+    pheno_section = []
+    if phenodata is not None and not phenodata.empty:
+        pheno_section = [
+            html.Div(style=CS, children=[
+                _st("Raw Phenodata File", "Original phenodata TSV as loaded"),
+                make_table(phenodata, "raw-pheno-table"),
+            ])
+        ]
+
+    children = [
+        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
+            _sc("Samples", str(len(meta)), C["accent"]),
+            _sc("Groups", str(meta["Group"].nunique()), C["h4"]),
+            _sc("Tissues", str(meta["Tissue"].nunique()) if "Tissue" in meta.columns else "1", C["green"]),
+        ]),
+        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=gbar)]),
+            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=tbar)]) if meta.get("Tissue", pd.Series()).nunique() > 1 else html.Div(),
+        ]),
+        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=obf)]) if hptm is not None else html.Div(),
+            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=dbf)]) if "Detected_hPTMs" in enriched.columns else html.Div(),
+        ]),
+        html.Div(style=CS, children=[
+            _st("Sample Metadata Table", "Editable | Processing order, groups, batch, data quality metrics"),
+            make_table(enriched, "pheno-table"),
+        ]),
+    ] + pheno_section
+
+    return html.Div(children)
+
+
+# ======================================================================
 # TAB: SAMPLE BROWSER
 # ======================================================================
 
@@ -1429,7 +1775,7 @@ def _bi(f, exp):
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.1")
+    print("  EpiProfile-Plants Dashboard v3.2")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
