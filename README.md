@@ -6,26 +6,41 @@ Interactive visualization dashboard for **EpiProfile-Plants** histone PTM quanti
 ![Dash](https://img.shields.io/badge/Dash-4.0+-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
+## Data Hierarchy
+
+The dashboard correctly classifies EpiProfile output into three biological levels:
+
+| Level | Name | Description | Source |
+|-------|------|-------------|--------|
+| **hDP** | Derivatized Peptide | Peptide region headers (e.g., `TKQTAR(H3_3_8)`) | `histone_ratios.xls` headers |
+| **hPF** | Peptidoform | Combinatorial modifications on a peptide (e.g., `H3_9_17 K9me2K14ac`) | `histone_ratios.xls` data rows |
+| **hPTM** | Individual PTM | Single modification marks (e.g., `H3K4me1`) | `histone_ratios_single_PTMs.xls` |
+| **SeqVar** | Sequence Variant | Amino acid variants per region (e.g., `TKQTAR` vs `TKQSAR`) | `histone_ratios.xls` variant block |
+
 ## Features
 
 | Tab | Description |
 |-----|-------------|
-| **Histone Ratios** | Full PTM ratio heatmap with advanced filtering (histone type, region, group, threshold, variance), top variable PTMs, group distributions, editable DataTable |
-| **Single PTMs** | Clustered heatmap, Z-score normalization, PCA, violin plots, grouped bars, editable DataTable |
+| **Peptidoforms (hPF)** | Full hPF ratio heatmap with working filters (histone type, region, group, modification type, min threshold, top N by variance), top variable peptidoforms, group distribution violin plots, editable DataTable |
+| **Single PTMs (hPTM)** | Clustered heatmap, Z-score normalization, violin plots, grouped bars, editable DataTable |
 | **QC Dashboard** | Missingness heatmap, peptide completeness, area distributions, noise analysis, summary stat cards |
-| **PSM Explorer** | Mass accuracy (ppm), measured vs calculated m/z, modifications, charge states, RT |
+| **PCA & Clustering** | 2D PCA with 95% confidence ellipses, scree plot, PCA biplot with top 15 loading arrows, 3D PCA, hierarchical dendrogram, Spearman correlation heatmap |
+| **Statistics** | Kruskal-Wallis test with Benjamini-Hochberg FDR correction, volcano plot, significant features bar chart |
+| **UpSet / Co-occurrence** | PTM co-occurrence from combinatorial peptidoforms, detection patterns across groups, modification complexity analysis |
+| **Comparisons** | Mann-Whitney U test + FDR, volcano, fold-change bars, MA plots; data level selector (hPTM vs hPF) |
 | **Sample Browser** | PDF chromatogram viewer, per-sample PTM profile bar charts |
-| **Comparisons** | Log2 fold change, scatter plots, MA plots between groups |
-| **Correlations** | Spearman sample/peptide correlation heatmaps, hierarchical dendrogram, H3 vs H4 |
 
-### v3.0 Highlights
+### v3.1 Highlights
 
+- **Proper hDP/hPF/hPTM hierarchy** — correctly classifies peptide regions, peptidoforms, individual marks, and sequence variants
+- **Working filter callbacks** — 6 interactive filters on the Peptidoforms tab that actually filter data
+- **Publication PCA** — biplots with loading arrows, 95% confidence ellipses, scree plots, 3D PCA
+- **UpSet plots** — PTM co-occurrence analysis from combinatorial peptidoforms (pure Plotly)
+- **Robust statistics** — Kruskal-Wallis + Mann-Whitney U with Benjamini-Hochberg FDR correction
 - **Clean white professional theme** with publication-quality styling
 - **4 experiment support** out of the box (PXD046788, PXD014739, PXD046034, Ontogeny)
-- **Advanced filtering controls** — filter by histone type, region, group, min threshold, variance percentile
 - **Editable DataTables** — sort, filter, edit cells, delete rows/columns, export CSV on the fly
 - **Recursive file finder** — auto-discovers data files in nested directory structures
-- **Experiment description bar** — auto-generated summary of loaded data
 
 ### Supported EpiProfile Output
 
@@ -71,8 +86,11 @@ Then open **http://localhost:8050** in your browser.
 This dashboard provides interactive visualization of EpiProfile output that goes beyond the static MATLAB PDFs, enabling:
 
 - Multi-experiment comparison with dropdown selector
+- Proper hDP/hPF/hPTM data level classification
 - Clustered heatmaps with hierarchical ordering
-- PCA for sample quality assessment
+- PCA biplots with confidence ellipses for sample quality
+- Kruskal-Wallis and Mann-Whitney statistical testing with FDR
+- UpSet-style PTM co-occurrence analysis
 - PSM-level mass accuracy quality control
 - Publication-ready plots with consistent styling
 - On-the-fly data editing and CSV export
@@ -82,7 +100,7 @@ This dashboard provides interactive visualization of EpiProfile output that goes
 
 ```
 epiprofile-dashboard/
-├── epiprofile_dashboard.py   # Main application (single file)
+├── epiprofile_dashboard.py   # Main application (single file, ~1440 lines)
 ├── requirements.txt          # Python dependencies
 ├── .gitignore
 └── README.md
