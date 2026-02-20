@@ -311,7 +311,9 @@ def load_experiment(base_dir):
             print(f"    WARN parsing ratios: {e}")
 
     # -- phenodata --
-    for fn in ["phenodata_arabidopsis_project.tsv","phenodata.tsv","phenodata_PXD046034.tsv"]:
+    pheno_names = ["phenodata_arabidopsis_project.tsv","phenodata.tsv","phenodata_PXD046034.tsv",
+                   "phenodata_ontogeny.tsv"]
+    for fn in pheno_names:
         fp = find_file(base_dir, fn)
         if not fp: fp = os.path.join(ld, fn) if os.path.exists(os.path.join(ld, fn)) else None
         if fp and os.path.exists(fp):
@@ -357,25 +359,60 @@ def build_desc(d):
     return " | ".join(parts) if parts else ""
 
 
+def _match_sample(sample, pheno_names):
+    """Robust matching: try exact, then stripped prefixes, then substring."""
+    if sample in pheno_names:
+        return sample
+    # Strip leading number-dash from both sides
+    s_stripped = re.sub(r'^\d+-', '', sample)
+    for pn in pheno_names:
+        pn_stripped = re.sub(r'^\d+-', '', pn)
+        if s_stripped == pn_stripped or s_stripped == pn or sample == pn_stripped:
+            return pn
+    # Substring match (longest common suffix)
+    for pn in pheno_names:
+        if sample in pn or pn in sample:
+            return pn
+    return None
+
+
 def build_metadata(sample_names, phenodata=None):
     records = []
     for s in sample_names:
         t, ti, r = parse_sample_name(s.strip())
         records.append({"Sample":s,"Treatment":t,"Tissue":ti,"Replicate":r})
     meta = pd.DataFrame(records)
+
     if phenodata is not None and "Sample_Name" in phenodata.columns:
         pheno = phenodata.copy()
-        pheno["_n"] = pheno["Sample_Name"].str.extract(r"^(\d+)-").astype(float)
-        meta["_n"] = meta["Sample"].str.extract(r"^(\d+)").astype(float) if meta["Sample"].str.match(r"^\d").any() else range(len(meta))
-        if "Sample_Group" in pheno.columns:
-            mm = dict(zip(pheno["Sample_Name"], pheno["Sample_Group"]))
-            nm = dict(zip(pheno["_n"].dropna(), pheno.loc[pheno["_n"].notna(),"Sample_Group"]))
-            def gg(row):
-                if row["Sample"] in mm: return mm[row["Sample"]]
-                if row["_n"] in nm: return nm[row["_n"]]
-                return row["Treatment"]
-            meta["Group"] = meta.apply(gg, axis=1)
-        meta = meta.drop(columns=["_n"], errors="ignore")
+        pn_list = pheno["Sample_Name"].tolist()
+
+        # Build robust match map: data column -> phenodata row
+        match_map = {}
+        for s in sample_names:
+            m = _match_sample(s, pn_list)
+            if m is not None:
+                match_map[s] = m
+
+        if match_map:
+            # Map all phenodata columns to meta using match
+            pheno_indexed = pheno.set_index("Sample_Name")
+            for col in pheno.columns:
+                if col == "Sample_Name":
+                    continue
+                meta_col = "Group" if col == "Sample_Group" else col
+                vals = []
+                for s in meta["Sample"]:
+                    pn = match_map.get(s)
+                    if pn is not None and pn in pheno_indexed.index:
+                        vals.append(pheno_indexed.loc[pn, col])
+                    else:
+                        vals.append(np.nan)
+                meta[meta_col] = vals
+
+            n_matched = sum(1 for s in sample_names if s in match_map)
+            print(f"    Phenodata: matched {n_matched}/{len(sample_names)} samples")
+
     if "Group" not in meta.columns: meta["Group"] = meta["Treatment"]
     if "Batch" not in meta.columns: meta["Batch"] = "A"
     return meta
