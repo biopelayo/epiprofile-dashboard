@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.4 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.5 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -9,16 +9,21 @@ Properly classifies histone data into three levels:
   hDP   = derivatized peptide regions  (from histone_ratios.xls, headers)
   SeqVar = sequence variants per region (from histone_ratios.xls, variant block)
 
+Features: SQLite analysis tracking, biclustering, data export, adaptive sizing,
+          full upload validation, analysis logging, classification filters.
+
 Usage:
   python epiprofile_dashboard.py <dir1> [dir2] ...
   python epiprofile_dashboard.py                    # uses DEFAULTS
 Access:  http://localhost:8050
 """
 
-import os, re, sys, base64, math, textwrap, configparser, argparse, warnings
+import os, re, sys, base64, math, textwrap, configparser, argparse, warnings, json, time
+import sqlite3
 from pathlib import Path
-from io import StringIO
+from io import StringIO, BytesIO
 from itertools import combinations
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -28,11 +33,115 @@ from scipy.cluster.hierarchy import linkage, leaves_list, dendrogram as scipy_de
 from scipy.spatial.distance import pdist
 from scipy.stats import spearmanr, mannwhitneyu, kruskal
 from sklearn.decomposition import PCA as skPCA
+from sklearn.cluster import SpectralBiclustering, KMeans
 from statsmodels.stats.multitest import multipletests
 from dash import Dash, html, dcc, callback, Input, Output, State, dash_table, ctx, no_update
 import dash
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+# ======================================================================
+# DATABASE & LOGGING
+# ======================================================================
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "epiprofile.db")
+
+def init_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.executescript("""
+    CREATE TABLE IF NOT EXISTS experiments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL,
+        base_dir TEXT NOT NULL, n_samples INTEGER, n_groups INTEGER,
+        n_hptm INTEGER, n_hpf INTEGER, n_regions INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_accessed TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS analysis_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        experiment TEXT NOT NULL, analysis_type TEXT NOT NULL,
+        parameters TEXT, n_features INTEGER, n_significant INTEGER,
+        summary TEXT, duration_ms INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS saved_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        analysis_id INTEGER REFERENCES analysis_log(id),
+        result_type TEXT NOT NULL, file_path TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS uploads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        experiment TEXT, filename TEXT NOT NULL, file_type TEXT,
+        n_rows INTEGER, n_cols INTEGER, status TEXT, message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_activity TIMESTAMP, n_actions INTEGER DEFAULT 0,
+        experiments_viewed TEXT);
+    """)
+    con.commit(); con.close()
+
+init_db()
+
+def _db():
+    return sqlite3.connect(DB_PATH)
+
+SESSION_ID = None
+def start_session():
+    global SESSION_ID
+    con = _db(); cur = con.cursor()
+    cur.execute("INSERT INTO sessions (started_at, last_activity, n_actions, experiments_viewed) VALUES (?,?,0,'[]')",
+                (datetime.now().isoformat(), datetime.now().isoformat()))
+    SESSION_ID = cur.lastrowid; con.commit(); con.close()
+
+start_session()
+
+def log_analysis(experiment, analysis_type, parameters=None, n_features=0, n_significant=0, summary="", duration_ms=0):
+    try:
+        con = _db(); cur = con.cursor()
+        cur.execute("INSERT INTO analysis_log (experiment, analysis_type, parameters, n_features, n_significant, summary, duration_ms) VALUES (?,?,?,?,?,?,?)",
+                    (experiment, analysis_type, json.dumps(parameters) if parameters else None, n_features, n_significant, summary, duration_ms))
+        aid = cur.lastrowid
+        if SESSION_ID:
+            cur.execute("UPDATE sessions SET n_actions=n_actions+1, last_activity=? WHERE id=?",
+                        (datetime.now().isoformat(), SESSION_ID))
+        con.commit(); con.close(); return aid
+    except Exception as e:
+        print(f"  DB log error: {e}"); return None
+
+def log_upload(experiment, filename, file_type, n_rows=0, n_cols=0, status="success", message=""):
+    try:
+        con = _db(); cur = con.cursor()
+        cur.execute("INSERT INTO uploads (experiment, filename, file_type, n_rows, n_cols, status, message) VALUES (?,?,?,?,?,?,?)",
+                    (experiment, filename, file_type, n_rows, n_cols, status, message))
+        con.commit(); con.close()
+    except Exception as e:
+        print(f"  DB upload log error: {e}")
+
+def log_experiment(name, base_dir, n_samples=0, n_groups=0, n_hptm=0, n_hpf=0, n_regions=0):
+    try:
+        con = _db(); cur = con.cursor()
+        cur.execute("INSERT OR REPLACE INTO experiments (name, base_dir, n_samples, n_groups, n_hptm, n_hpf, n_regions, last_accessed) VALUES (?,?,?,?,?,?,?,?)",
+                    (name, base_dir, n_samples, n_groups, n_hptm, n_hpf, n_regions, datetime.now().isoformat()))
+        con.commit(); con.close()
+    except Exception as e:
+        print(f"  DB experiment log error: {e}")
+
+def get_analysis_history(experiment=None, limit=100):
+    con = _db(); q = "SELECT * FROM analysis_log"
+    params = []
+    if experiment: q += " WHERE experiment=?"; params.append(experiment)
+    q += " ORDER BY created_at DESC LIMIT ?"; params.append(limit)
+    df = pd.read_sql_query(q, con, params=params); con.close(); return df
+
+def get_upload_history(limit=50):
+    con = _db(); df = pd.read_sql_query("SELECT * FROM uploads ORDER BY created_at DESC LIMIT ?", con, params=(limit,)); con.close(); return df
+
+def get_session_info():
+    if not SESSION_ID: return {}
+    con = _db(); cur = con.cursor()
+    cur.execute("SELECT * FROM sessions WHERE id=?", (SESSION_ID,))
+    row = cur.fetchone(); con.close()
+    if row: return {"id":row[0],"started":row[1],"last_activity":row[2],"n_actions":row[3],"experiments":row[4]}
+    return {}
 
 # ======================================================================
 # CONFIGURATION
@@ -55,7 +164,7 @@ ALT_RATIOS = {
     },
 }
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.4")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.5")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -603,13 +712,21 @@ for name, path in EXPERIMENTS.items():
         print(f"  {name}...")
         EXP_DATA[name] = load_experiment(path)
         d = EXP_DATA[name]
+        n_hptm = d["hptm"].shape[0] if "hptm" in d else 0
+        n_hpf = d["hpf"].shape[0] if "hpf" in d and not d["hpf"].empty else 0
+        n_reg = len(d.get("hdp_list", []))
+        meta = d.get("metadata", pd.DataFrame())
+        n_samp = len(meta) if not meta.empty else 0
+        n_grp = meta["Group"].nunique() if not meta.empty and "Group" in meta.columns else 0
         if "hptm" in d: print(f"    hPTM: {d['hptm'].shape}")
-        if "hpf" in d and not d["hpf"].empty: print(f"    hPF:  {d['hpf'].shape}")
-        if "hdp_list" in d: print(f"    hDP:  {len(d['hdp_list'])} regions")
+        if n_hpf: print(f"    hPF:  {d['hpf'].shape}")
+        if n_reg: print(f"    hDP:  {n_reg} regions")
         print(f"    Folders: {len(d['sample_folders'])}")
         psm = d.get("all_psm", pd.DataFrame())
         if not psm.empty: print(f"    PSMs: {len(psm)}")
         print(f"    >> {d.get('description','')}")
+        # Log to database
+        log_experiment(name, path, n_samp, n_grp, n_hptm, n_hpf, n_reg)
 
 DEFAULT_EXP = list(EXP_DATA.keys())[0] if EXP_DATA else None
 
@@ -647,7 +764,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                 html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"32px","fontWeight":"800",
                          "letterSpacing":"-0.5px","color":"white","lineHeight":"1.1"}),
                 html.Div(style={"display":"flex","gap":"10px","alignItems":"center","marginTop":"4px"}, children=[
-                    html.Span("PTM Dashboard v3.4", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
+                    html.Span("PTM Dashboard v3.5", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
                     html.Span("|", style={"color":"rgba(255,255,255,0.4)"}),
                     html.Span("hPTM", style={"background":"rgba(255,255,255,0.15)","padding":"2px 8px",
                               "borderRadius":"4px","fontSize":"12px","fontWeight":"600"}),
@@ -676,13 +793,13 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                              style={"width":"220px","fontSize":"14px","borderRadius":"10px"}),
             ]),
         ]),
-        # Upload area (collapsible)
+        # Upload area (collapsible, 3-slot)
         html.Details(style={"marginTop":"16px","position":"relative","zIndex":"1"}, children=[
-            html.Summary("Upload phenodata / histone_ratios files",
+            html.Summary("Upload phenodata / histone_ratios / single_PTMs files",
                          style={"cursor":"pointer","color":"#bbf7d0","fontSize":"13px","fontWeight":"500"}),
             html.Div(style={"display":"flex","gap":"16px","marginTop":"12px","flexWrap":"wrap"}, children=[
-                html.Div(style={"flex":"1","minWidth":"300px"}, children=[
-                    html.Label("Phenodata TSV", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"600"}),
+                html.Div(style={"flex":"1","minWidth":"250px"}, children=[
+                    html.Label("1. Phenodata TSV", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"600"}),
                     dcc.Upload(id="upload-pheno",
                         children=html.Div(["Drop or ", html.A("select phenodata.tsv",style={"color":"#4ade80","fontWeight":"600"})]),
                         style={"border":"2px dashed rgba(255,255,255,0.3)","borderRadius":"10px","padding":"14px",
@@ -690,10 +807,19 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                "cursor":"pointer","backgroundColor":"rgba(0,0,0,0.1)"},
                         multiple=False),
                 ]),
-                html.Div(style={"flex":"1","minWidth":"300px"}, children=[
-                    html.Label("histone_ratios.xls (TSV)", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"600"}),
+                html.Div(style={"flex":"1","minWidth":"250px"}, children=[
+                    html.Label("2. histone_ratios.xls (TSV)", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"600"}),
                     dcc.Upload(id="upload-ratios",
                         children=html.Div(["Drop or ", html.A("select histone_ratios",style={"color":"#4ade80","fontWeight":"600"})]),
+                        style={"border":"2px dashed rgba(255,255,255,0.3)","borderRadius":"10px","padding":"14px",
+                               "textAlign":"center","color":"rgba(255,255,255,0.7)","fontSize":"13px",
+                               "cursor":"pointer","backgroundColor":"rgba(0,0,0,0.1)"},
+                        multiple=False),
+                ]),
+                html.Div(style={"flex":"1","minWidth":"250px"}, children=[
+                    html.Label("3. Single PTMs TSV", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"600"}),
+                    dcc.Upload(id="upload-singleptm",
+                        children=html.Div(["Drop or ", html.A("select single_PTMs",style={"color":"#4ade80","fontWeight":"600"})]),
                         style={"border":"2px dashed rgba(255,255,255,0.3)","borderRadius":"10px","padding":"14px",
                                "textAlign":"center","color":"rgba(255,255,255,0.7)","fontSize":"13px",
                                "cursor":"pointer","backgroundColor":"rgba(0,0,0,0.1)"},
@@ -720,13 +846,16 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
         dcc.Tab(label="Comparisons", value="tab-cmp", style=ts, selected_style=tss),
         dcc.Tab(label="Phenodata", value="tab-pheno", style=ts, selected_style=tss),
         dcc.Tab(label="Sample Browser", value="tab-browse", style=ts, selected_style=tss),
+        dcc.Tab(label="Analysis Log", value="tab-log", style=ts, selected_style=tss),
     ]),
     html.Div(id="tab-out", style={"padding":"28px 40px","maxWidth":"1700px","margin":"0 auto"}),
+    # ---- Download component (hidden, triggered by export callbacks) ----
+    dcc.Download(id="download-data"),
     # ---- Footer ----
     html.Div(style={"textAlign":"center","padding":"24px","color":"#166534","fontSize":"13px",
                      "background":"linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%)",
                      "borderTop":"2px solid #bbf7d0","marginTop":"40px"}, children=[
-        html.Span("EpiProfile-Plants v3.4 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
+        html.Span("EpiProfile-Plants v3.5 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
         html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
                style={"color":"#15803d","textDecoration":"none","fontWeight":"700"}, target="_blank"),
     ]),
@@ -758,28 +887,42 @@ def _db(e, pal):
 
 @callback(Output("upload-status","children"),
           Input("upload-pheno","contents"), Input("upload-ratios","contents"),
+          Input("upload-singleptm","contents"),
           State("upload-pheno","filename"), State("upload-ratios","filename"),
+          State("upload-singleptm","filename"),
           State("cur-exp","data"), prevent_initial_call=True)
-def _upload(pheno_content, ratios_content, pheno_name, ratios_name, exp):
+def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name, sptm_name, exp):
     if not exp or exp not in EXP_DATA:
-        return "No experiment selected."
+        return html.Div("No experiment selected.", style={"color":"#fca5a5"})
     d = EXP_DATA[exp]
-    msgs = []
+    results = []
 
     if pheno_content:
         try:
             _, content_string = pheno_content.split(",")
             decoded = base64.b64decode(content_string).decode("utf-8")
             pheno_df = pd.read_csv(StringIO(decoded), sep="\t")
-            d["phenodata"] = pheno_df
-            # Rebuild metadata
-            ref = d.get("hptm", d.get("hpf"))
-            if ref is not None:
-                d["metadata"] = build_metadata(list(ref.columns), pheno_df)
-                d["description"] = build_desc(d)
-            msgs.append(f"Phenodata loaded: {pheno_name} ({len(pheno_df)} rows, groups: {', '.join(sorted(pheno_df['Sample_Group'].unique())) if 'Sample_Group' in pheno_df.columns else '?'})")
+            # Validate required columns
+            missing = [c for c in ["Sample_Name","Sample_Group"] if c not in pheno_df.columns]
+            if missing:
+                results.append(html.Span(f"Phenodata WARN: missing columns {missing}. ", style={"color":"#fcd34d"}))
+            else:
+                d["phenodata"] = pheno_df
+                ref = d.get("hptm", d.get("hpf"))
+                if ref is not None:
+                    d["metadata"] = build_metadata(list(ref.columns), pheno_df)
+                    d["description"] = build_desc(d)
+                    # Match report
+                    matched = len([s for s in ref.columns if s in pheno_df["Sample_Name"].values])
+                    results.append(html.Span(
+                        f"Phenodata OK: {pheno_name} ({len(pheno_df)} rows, {matched}/{len(ref.columns)} samples matched, "
+                        f"groups: {', '.join(sorted(pheno_df['Sample_Group'].unique()))}). ",
+                        style={"color":"#4ade80"}))
+                log_upload(exp, pheno_name, "phenodata", len(pheno_df), len(pheno_df.columns), "success",
+                           f"{len(pheno_df)} rows")
         except Exception as e:
-            msgs.append(f"Phenodata error: {e}")
+            results.append(html.Span(f"Phenodata ERROR: {e}. ", style={"color":"#fca5a5"}))
+            log_upload(exp, pheno_name or "?", "phenodata", 0, 0, "error", str(e))
 
     if ratios_content:
         try:
@@ -795,11 +938,33 @@ def _upload(pheno_content, ratios_content, pheno_name, ratios_name, exp):
             if parsed["areas"] is not None:
                 d["areas"] = parsed["areas"]
             d["description"] = build_desc(d)
-            msgs.append(f"Ratios loaded: {ratios_name} ({parsed['hpf_df'].shape[0]} hPF, {len(parsed['hdp_list'])} regions)")
+            results.append(html.Span(
+                f"Ratios OK: {ratios_name} ({parsed['hpf_df'].shape[0]} hPF, {len(parsed['hdp_list'])} regions). ",
+                style={"color":"#4ade80"}))
+            log_upload(exp, ratios_name, "histone_ratios", parsed['hpf_df'].shape[0], parsed['hpf_df'].shape[1],
+                       "success", f"{parsed['hpf_df'].shape[0]} hPF")
         except Exception as e:
-            msgs.append(f"Ratios error: {e}")
+            results.append(html.Span(f"Ratios ERROR: {e}. ", style={"color":"#fca5a5"}))
+            log_upload(exp, ratios_name or "?", "histone_ratios", 0, 0, "error", str(e))
 
-    return " | ".join(msgs) if msgs else ""
+    if sptm_content:
+        try:
+            _, content_string = sptm_content.split(",")
+            decoded = base64.b64decode(content_string).decode("utf-8")
+            sptm_df = pd.read_csv(StringIO(decoded), sep="\t", index_col=0)
+            sptm_df = sptm_df.apply(pd.to_numeric, errors="coerce")
+            d["hptm"] = sptm_df
+            d["description"] = build_desc(d)
+            results.append(html.Span(
+                f"Single PTMs OK: {sptm_name} ({sptm_df.shape[0]} PTMs, {sptm_df.shape[1]} samples). ",
+                style={"color":"#4ade80"}))
+            log_upload(exp, sptm_name, "single_ptms", sptm_df.shape[0], sptm_df.shape[1],
+                       "success", f"{sptm_df.shape[0]} hPTMs")
+        except Exception as e:
+            results.append(html.Span(f"Single PTMs ERROR: {e}. ", style={"color":"#fca5a5"}))
+            log_upload(exp, sptm_name or "?", "single_ptms", 0, 0, "error", str(e))
+
+    return html.Div(results) if results else ""
 
 @callback(Output("tab-out","children"), Input("tabs","value"), Input("cur-exp","data"), Input("cur-palette","data"))
 def _rt(tab, exp, pal):
@@ -807,6 +972,7 @@ def _rt(tab, exp, pal):
         return html.Div("No experiment loaded", style={"color":C["red"],"textAlign":"center","padding":"80px"})
     d = EXP_DATA[exp]
     try:
+        if tab == "tab-log": return tab_log(d, exp)
         return {"tab-hpf":tab_hpf,"tab-hptm":tab_hptm,"tab-qc":tab_qc,
                 "tab-pca":tab_pca,"tab-stats":tab_stats,"tab-upset":tab_upset,
                 "tab-region":tab_region,"tab-cmp":tab_cmp,"tab-pheno":tab_pheno,
@@ -820,50 +986,89 @@ def _rt(tab, exp, pal):
 # HELPERS
 # ======================================================================
 
-def pfig(fig, h=500):
+def adaptive_font(n_items, base=14, min_size=8, max_size=18):
+    """Compute font size based on number of items to display."""
+    if n_items <= 15: return max_size
+    if n_items <= 30: return base
+    if n_items <= 60: return max(min_size + 2, base - 2)
+    if n_items <= 100: return max(min_size + 1, base - 3)
+    return min_size
+
+def adaptive_margin_l(labels, base=80, per_char=6.5, min_m=60, max_m=300):
+    """Compute left margin based on longest label length."""
+    if not labels: return base
+    longest = max(len(str(l)) for l in labels)
+    return int(min(max_m, max(min_m, base + longest * per_char)))
+
+def adaptive_legend(n_groups):
+    """Return legend layout dict based on number of groups."""
+    if n_groups <= 8:
+        return dict(font=dict(size=13), x=1.02, y=1, xanchor="left")
+    if n_groups <= 15:
+        return dict(font=dict(size=11), x=1.02, y=1, xanchor="left")
+    return dict(font=dict(size=9), orientation="h", y=-0.15, x=0.5, xanchor="center")
+
+def classify_ptm_name(ptm_name):
+    """Classify a PTM by histone and modification type."""
+    histone = "H3.3" if ptm_name.startswith("H33") else \
+              "H3" if ptm_name.startswith("H3") else \
+              "H4" if ptm_name.startswith("H4") else "Other"
+    name_l = ptm_name.lower()
+    if "me" in name_l: ptm_type = "Methylation"
+    elif "ac" in name_l: ptm_type = "Acetylation"
+    elif "ph" in name_l: ptm_type = "Phosphorylation"
+    elif "ub" in name_l: ptm_type = "Ubiquitination"
+    elif "unmod" in name_l: ptm_type = "Unmodified"
+    else: ptm_type = "Other"
+    return histone, ptm_type
+
+def pfig(fig, h=500, n_x=None, n_y=None, n_groups=None):
+    """Publication figure with adaptive sizing."""
     fig.update_layout(template=PUB, height=h, colorway=GC)
-    # Ensure all axes have large fonts
+    xsz = adaptive_font(n_x) if n_x else 13
+    ysz = adaptive_font(n_y) if n_y else 13
     fig.update_xaxes(title_font=dict(size=18, color="#1e293b"),
-                     tickfont=dict(size=13, color="#334155"))
+                     tickfont=dict(size=xsz, color="#334155"))
     fig.update_yaxes(title_font=dict(size=18, color="#1e293b"),
-                     tickfont=dict(size=13, color="#334155"))
+                     tickfont=dict(size=ysz, color="#334155"))
+    if n_groups:
+        fig.update_layout(legend=adaptive_legend(n_groups))
     return fig
 
 def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600, meta=None):
-    """Publication heatmap. If meta is provided, adds a group color bar at the top."""
+    """Publication heatmap with adaptive font sizes. If meta is provided, adds a group color bar."""
+    xsz = adaptive_font(len(x))
+    ysz = adaptive_font(len(y))
+    ml = adaptive_margin_l(y)
     if meta is not None and not meta.empty:
-        # Build group annotation row
         sample_groups = {}
         for _, row in meta.iterrows():
             sample_groups[row["Sample"]] = row["Group"]
         groups_unique = sorted(set(sample_groups.values()))
         gc_map = {g: GC[i % len(GC)] for i, g in enumerate(groups_unique)}
         group_labels = [sample_groups.get(s, "?") for s in x]
-        group_colors = [gc_map.get(g, "#999") for g in group_labels]
 
         fig = make_subplots(rows=2, cols=1, row_heights=[0.03, 0.97],
                             vertical_spacing=0.005, shared_xaxes=True)
-        # Group bar
         fig.add_trace(go.Heatmap(
             z=[[groups_unique.index(g) if g in groups_unique else 0 for g in group_labels]],
             x=x, y=["Group"], colorscale=[[i/(max(len(groups_unique)-1,1)),gc_map[g]] for i,g in enumerate(groups_unique)],
             showscale=False, hovertext=[[g for g in group_labels]], hoverinfo="text",
             zmin=0, zmax=max(len(groups_unique)-1,1)), row=1, col=1)
-        # Main heatmap
         fig.add_trace(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
             colorbar=dict(thickness=14,len=0.85,title=dict(text=title,side="right",font=dict(size=13)),tickfont=dict(size=12)),
             hoverongaps=False, zmin=zmin, zmax=zmax), row=2, col=1)
-        fig.update_layout(template=PUB,height=h,margin=dict(l=200,b=130,t=35,r=40))
-        fig.update_xaxes(tickangle=45,tickfont=dict(size=11), row=2, col=1)
-        fig.update_yaxes(tickfont=dict(size=11),autorange="reversed", row=2, col=1)
+        fig.update_layout(template=PUB,height=h,margin=dict(l=ml,b=130,t=35,r=40))
+        fig.update_xaxes(tickangle=45,tickfont=dict(size=xsz), row=2, col=1)
+        fig.update_yaxes(tickfont=dict(size=ysz),autorange="reversed", row=2, col=1)
         fig.update_yaxes(tickfont=dict(size=13), row=1, col=1)
         return fig
     else:
         fig = go.Figure(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
             colorbar=dict(thickness=14,len=0.9,title=dict(text=title,side="right",font=dict(size=13)),tickfont=dict(size=12)),
             hoverongaps=False, zmin=zmin, zmax=zmax))
-        fig.update_layout(template=PUB,height=h,xaxis=dict(tickangle=45,tickfont=dict(size=11)),
-                          yaxis=dict(tickfont=dict(size=11),autorange="reversed"),margin=dict(l=200,b=130,t=35,r=40))
+        fig.update_layout(template=PUB,height=h,xaxis=dict(tickangle=45,tickfont=dict(size=xsz)),
+                          yaxis=dict(tickfont=dict(size=ysz),autorange="reversed"),margin=dict(l=ml,b=130,t=35,r=40))
         return fig
 
 def cluster_order(df, axis=0):
@@ -967,6 +1172,11 @@ def tab_hpf(d):
                            marks={10:"10",50:"50",100:"100",200:"All"},
                            tooltip={"placement":"bottom","always_visible":False}),
             ]),
+            html.Div(style={"flex":"0","minWidth":"100px","display":"flex","alignItems":"flex-end"}, children=[
+                html.Button("Export CSV", id="hpf-export", n_clicks=0,
+                            style={"padding":"10px 16px","borderRadius":"8px","border":"none",
+                                   "backgroundColor":C["accent"],"color":"white","fontWeight":"600",
+                                   "cursor":"pointer","fontSize":"13px"})]),
         ]),
         # Dynamic content
         html.Div(id="hpf-content"),
@@ -1033,8 +1243,8 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
     var_s = df.var(axis=1).dropna().sort_values(ascending=False).head(20)
     vf = go.Figure(go.Bar(x=var_s.values, y=var_s.index.tolist(), orientation="h",
                            marker=dict(color=var_s.values, colorscale="Viridis",line=dict(width=0))))
-    pfig(vf, 400); vf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
-                                      margin=dict(l=200),xaxis_title="Variance")
+    pfig(vf, 400, n_y=len(var_s)); vf.update_layout(yaxis=dict(autorange="reversed"),
+                                      margin=dict(l=adaptive_margin_l(var_s.index.tolist())),xaxis_title="Variance")
 
     # Faceted violin by group for top 6 most variable hPF
     top_for_violin = var_s.head(6).index.tolist()
@@ -1081,6 +1291,36 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
             make_table(df, "hpf-table"),
         ]),
     ])
+
+
+@callback(Output("download-data","data", allow_duplicate=True),
+          Input("hpf-export","n_clicks"),
+          State("hpf-hist","value"),State("hpf-reg","value"),State("hpf-grp","value"),
+          State("hpf-type","value"),State("hpf-min","value"),State("hpf-topn","value"),
+          State("cur-exp","data"), prevent_initial_call=True)
+def _hpf_export(n, hist, reg, grp, htype, min_val, topn, exp):
+    if not n or not exp or exp not in EXP_DATA: return no_update
+    d = EXP_DATA[exp]; hpf = d.get("hpf", pd.DataFrame()); hpf_meta = d.get("hpf_meta", pd.DataFrame())
+    meta = d["metadata"]
+    if hpf.empty: return no_update
+    mask = pd.Series(True, index=hpf_meta.index)
+    if hist != "All" and "histone" in hpf_meta.columns: mask &= hpf_meta["histone"] == hist
+    if reg != "All" and "region" in hpf_meta.columns: mask &= hpf_meta["region"] == reg
+    if htype == "single": mask &= (~hpf_meta["is_combo"]) & (hpf_meta["modification"] != "unmod")
+    elif htype == "combo": mask &= hpf_meta["is_combo"]
+    elif htype == "unmod": mask &= hpf_meta["modification"] == "unmod"
+    filtered_names = hpf_meta.loc[mask, "name"].tolist()
+    df = hpf.loc[[n_ for n_ in filtered_names if n_ in hpf.index]].copy()
+    if grp != "All":
+        samps = meta[meta["Group"]==grp]["Sample"].tolist()
+        cols = [c for c in df.columns if c in samps]
+        if cols: df = df[cols]
+    df = df.dropna(how="all"); df = df[(df != 0).any(axis=1)]
+    if min_val > 0: df = df[df.mean(axis=1) >= min_val]
+    if topn < 200 and len(df) > topn: df = df.loc[df.var(axis=1).sort_values(ascending=False).head(topn).index]
+    fname = f"{exp.split('(')[0].strip()}_hPF_filtered_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    log_analysis(exp, "export_hpf", {"hist":hist,"reg":reg,"grp":grp,"type":htype}, len(df), 0, f"Exported {len(df)} hPF")
+    return dcc.send_data_frame(df.to_csv, fname)
 
 
 # ======================================================================
@@ -1135,9 +1375,14 @@ def tab_hptm(d):
     tp = bdf.groupby("PTM")["Mean"].max().sort_values(ascending=False).head(15).index
     bf = px.bar(bdf[bdf["PTM"].isin(tp)], x="PTM", y="Mean", color="Group", barmode="group",
                 error_y="SD", color_discrete_sequence=GC)
-    pfig(bf, 420); bf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=12)),yaxis_title="Mean Ratio")
+    pfig(bf, 420, n_x=len(tp), n_groups=len(groups)); bf.update_layout(xaxis=dict(tickangle=45),yaxis_title="Mean Ratio")
 
     return html.Div([
+        html.Div(style={**CS,"display":"flex","gap":"12px","alignItems":"center","justifyContent":"flex-end"}, children=[
+            html.Button("Export hPTM CSV", id="hptm-export", n_clicks=0,
+                        style={"padding":"10px 16px","borderRadius":"8px","border":"none",
+                               "backgroundColor":C["accent"],"color":"white","fontWeight":"600",
+                               "cursor":"pointer","fontSize":"13px"})]),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"450px"}, children=[
                 _st("Clustered Heatmap","Ward linkage | hPTM ratios | Group color bar"), dcc.Graph(figure=hm)]),
@@ -1152,6 +1397,17 @@ def tab_hptm(d):
             _st("hPTM Data","Editable | Sortable | Filterable | Export CSV"),
             make_table(df, "hptm-table")]),
     ])
+
+
+@callback(Output("download-data","data", allow_duplicate=True),
+          Input("hptm-export","n_clicks"), State("cur-exp","data"), prevent_initial_call=True)
+def _hptm_export(n, exp):
+    if not n or not exp or exp not in EXP_DATA: return no_update
+    d = EXP_DATA[exp]; df = d.get("hptm")
+    if df is None: return no_update
+    fname = f"{exp.split('(')[0].strip()}_hPTM_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    log_analysis(exp, "export_hptm", {}, len(df), 0, f"Exported {len(df)} hPTMs")
+    return dcc.send_data_frame(df.to_csv, fname)
 
 
 # ======================================================================
@@ -1328,6 +1584,74 @@ def tab_pca(d):
     chm = phm(corr.values, corr.columns.tolist(), corr.index.tolist(),
               cs="RdBu_r", title="Spearman", zmin=-1, zmax=1, h=max(500,len(corr)*12))
 
+    # --- Feature clustering (K-means + dendrogram) ---
+    feat_X = df.fillna(0).values  # features x samples matrix
+    n_feats = feat_X.shape[0]
+
+    # Feature dendrogram (cluster features by their ratio profiles)
+    try:
+        feat_dist = pdist(feat_X, metric="euclidean")
+        feat_link = linkage(feat_dist, method="ward")
+        feat_dr = scipy_dend(feat_link, labels=df.index.tolist(), no_plot=True)
+        feat_dfig = go.Figure()
+        for xc, yc in zip(feat_dr["icoord"], feat_dr["dcoord"]):
+            feat_dfig.add_trace(go.Scatter(x=yc, y=xc, mode="lines",
+                line=dict(color=C["green"], width=1.2), showlegend=False))
+        tp_f = [5+10*i for i in range(len(feat_dr["ivl"]))]
+        feat_dfig.update_layout(template=PUB, height=max(400, n_feats*14),
+            yaxis=dict(tickmode="array", tickvals=tp_f, ticktext=feat_dr["ivl"],
+                       tickfont=dict(size=adaptive_font(n_feats))),
+            xaxis_title="Distance (Ward)",
+            title=dict(text="Feature Dendrogram (PTM Clustering)", font=dict(size=18)),
+            margin=dict(l=adaptive_margin_l(feat_dr["ivl"])))
+    except Exception:
+        feat_dfig = go.Figure(); pfig(feat_dfig, 350)
+
+    # K-means clustering of features
+    k_vals = min(6, max(2, n_feats // 5))  # auto K
+    try:
+        km = KMeans(n_clusters=k_vals, random_state=42, n_init=10).fit(feat_X)
+        km_labels = km.labels_
+        clust_df = pd.DataFrame({"Feature": df.index, "Cluster": km_labels})
+        # Feature cluster heatmap: mean ratio per cluster x group
+        groups_list = sorted(meta["Group"].unique())
+        group_means = pd.DataFrame(index=df.index)
+        for g in groups_list:
+            samps_g = meta[meta["Group"]==g]["Sample"].tolist()
+            cols_g = [c for c in df.columns if c in samps_g]
+            if cols_g: group_means[g] = df[cols_g].mean(axis=1)
+        group_means["Cluster"] = km_labels
+        cluster_means = group_means.groupby("Cluster")[groups_list].mean()
+
+        km_hm = phm(cluster_means.values,
+                     [f"Cluster {i}" for i in cluster_means.index],
+                     groups_list, cs="Greens",
+                     title=f"Feature Clusters (K={k_vals}) x Group Means",
+                     h=max(250, k_vals*50))
+    except Exception:
+        km_hm = go.Figure(); pfig(km_hm, 300)
+        clust_df = pd.DataFrame()
+
+    # Biclustering heatmap (features x samples, reordered)
+    try:
+        Z = df.fillna(0).values
+        n_bic = min(4, n_feats, X.shape[0])
+        if n_bic >= 2 and Z.shape[0] >= 4 and Z.shape[1] >= 4:
+            bic = SpectralBiclustering(n_clusters=n_bic, random_state=42)
+            bic.fit(Z)
+            row_order = np.argsort(bic.row_labels_)
+            col_order = np.argsort(bic.column_labels_)
+            Z_reord = Z[row_order][:, col_order]
+            feats_reord = [df.index[i] for i in row_order]
+            samps_reord = [df.columns[i] for i in col_order]
+            bic_hm = phm(Z_reord, feats_reord, samps_reord, cs="YlGnBu",
+                         title=f"Biclustering (n={n_bic}) — Features x Samples",
+                         h=max(500, n_feats*12))
+        else:
+            bic_hm = go.Figure(); pfig(bic_hm, 300)
+    except Exception:
+        bic_hm = go.Figure(); pfig(bic_hm, 300)
+
     children = [
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=fig1)]),
@@ -1342,12 +1666,41 @@ def tab_pca(d):
         children.append(html.Div(style=CS, children=[dcc.Graph(figure=fig3d)]))
     children.append(html.Div(style=CS, children=[_st("Sample Correlation"), dcc.Graph(figure=chm)]))
 
+    # Feature clustering section
+    children.append(html.H3("Feature Clustering", style={"color":C["accent"],"marginTop":"32px","marginBottom":"8px","fontSize":"20px"}))
+    children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+        html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=feat_dfig)]),
+        html.Div(style={**CS,"flex":"1","minWidth":"350px"}, children=[dcc.Graph(figure=km_hm)]),
+    ]))
+    children.append(html.Div(style=CS, children=[
+        _st("Biclustering","Spectral biclustering — features and samples reordered together"),
+        dcc.Graph(figure=bic_hm)]))
+
     return html.Div(children)
 
 
 # ======================================================================
 # TAB: STATISTICS
 # ======================================================================
+
+def _enrich_stats(res, groups):
+    """Add classification columns to statistics results."""
+    histone_col, ptm_type_col, direction_col = [], [], []
+    for _, row in res.iterrows():
+        h, t = classify_ptm_name(row["PTM"])
+        histone_col.append(h); ptm_type_col.append(t)
+        means = [row.get(f"mean_{g}", np.nan) for g in groups]
+        means_valid = [(g, m) for g, m in zip(groups, means) if not np.isnan(m) and m > 0]
+        if len(means_valid) >= 2:
+            max_g = max(means_valid, key=lambda x: x[1])
+            min_g = min(means_valid, key=lambda x: x[1])
+            fc = np.log2(max_g[1] / (min_g[1] + 1e-10))
+            direction_col.append(f"Up in {max_g[0]}" if fc > 0.5 else f"Down in {max_g[0]}" if fc < -0.5 else "Unchanged")
+        else:
+            direction_col.append("N/A")
+    res["Histone"] = histone_col; res["PTM_type"] = ptm_type_col; res["Direction"] = direction_col
+    return res
+
 
 def tab_stats(d):
     df = d.get("hptm", d.get("hpf"))
@@ -1358,166 +1711,199 @@ def tab_stats(d):
     # Check if Design column exists (for stratified analysis)
     designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
 
+    # Build filter controls
+    filter_children = []
     if designs:
-        return html.Div([
-            html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap"}, children=[
-                html.Div(style={"flex":"1","minWidth":"250px"}, children=[
-                    _lbl("Design / Strain (independent analysis)"),
-                    dcc.Dropdown(id="stats-design",
-                        options=[{"label":"All (pooled - CAUTION)","value":"All"}]+[{"label":f"Design {x}","value":str(x)} for x in designs],
-                        value=str(designs[0]), clearable=False, style=DS)]),
-                html.Div(style={"padding":"8px"}, children=[
-                    html.P("Strains must be analyzed independently!", style={"color":C["red"],"fontSize":"13px","fontWeight":"700","margin":"0"})
-                ]),
-            ]),
-            html.Div(id="stats-out"),
-        ])
-
-    groups = sorted(meta["Group"].unique())
-    if len(groups) < 2:
-        return html.Div(style=CS, children=[html.P("Need >= 2 groups for statistics.")])
-
-    # Kruskal-Wallis
-    res = robust_group_test(df, meta, groups)
-    if res.empty:
-        return html.Div(style=CS, children=[html.P("Could not compute statistics.")])
-
-    n_sig = int((res["KW_FDR"] < 0.05).sum())
-    n_tested = len(res)
-
-    # Volcano-like: -log10(FDR) vs max fold change across groups
-    # Compute max absolute FC for each PTM
-    fc_data = []
-    for _, row in res.iterrows():
-        means = [row.get(f"mean_{g}", np.nan) for g in groups]
-        means = [m for m in means if not np.isnan(m) and m > 0]
-        if len(means) >= 2:
-            max_fc = np.log2(max(means)/min(means))
-            fc_data.append({"PTM":row["PTM"], "maxLog2FC":max_fc,
-                            "negLog10FDR":-np.log10(row["KW_FDR"]+1e-300),
-                            "FDR":row["KW_FDR"]})
-
-    if fc_data:
-        vdf = pd.DataFrame(fc_data)
-        vdf["sig"] = vdf["FDR"] < 0.05
-        vfig = px.scatter(vdf, x="maxLog2FC", y="negLog10FDR", hover_name="PTM",
-                          color="sig", color_discrete_map={True:C["red"],False:C["muted"]},
-                          labels={"maxLog2FC":"Max |log2(FC)|","negLog10FDR":"-log10(FDR)"},
-                          title="Volcano Plot (Kruskal-Wallis)")
-        pfig(vfig, 450)
-        vfig.add_hline(y=-np.log10(0.05), line_dash="dash", line_color=C["red"],
-                       annotation_text="FDR=0.05")
-        vfig.update_traces(marker=dict(size=8,line=dict(width=0.5,color="white")))
+        filter_children.append(html.Div(style={"flex":"1","minWidth":"220px"}, children=[
+            _lbl("Design / Strain"),
+            dcc.Dropdown(id="stats-design",
+                options=[{"label":"All (pooled - CAUTION)","value":"All"}]+[{"label":f"Design {x}","value":str(x)} for x in designs],
+                value=str(designs[0]), clearable=False, style=DS)]))
     else:
-        vfig = go.Figure(); pfig(vfig, 450)
+        filter_children.append(html.Div(dcc.Store(id="stats-design", data="none")))
 
-    # Significant PTMs bar
-    sig_res = res[res["KW_FDR"] < 0.05].head(30)
-    if not sig_res.empty:
-        sbf = go.Figure(go.Bar(
-            x=-np.log10(sig_res["KW_FDR"].values+1e-300),
-            y=sig_res["PTM"].tolist(), orientation="h",
-            marker=dict(color=-np.log10(sig_res["KW_FDR"].values+1e-300),colorscale="Reds",line=dict(width=0))))
-        pfig(sbf, max(300,len(sig_res)*18))
-        sbf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
-                          margin=dict(l=180),xaxis_title="-log10(FDR)")
-    else:
-        sbf = go.Figure(); pfig(sbf, 300)
+    filter_children.extend([
+        html.Div(style={"flex":"1","minWidth":"160px"}, children=[
+            _lbl("Show"),
+            dcc.Dropdown(id="stats-show",
+                options=[{"label":"All features","value":"all"},{"label":"Significant (FDR < threshold)","value":"sig"},
+                         {"label":"Up-regulated","value":"up"},{"label":"Down-regulated / changed","value":"down"}],
+                value="all", clearable=False, style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"160px"}, children=[
+            _lbl("Classify by"),
+            dcc.Dropdown(id="stats-classify",
+                options=[{"label":"None","value":"none"},{"label":"Histone (H3/H3.3/H4)","value":"histone"},
+                         {"label":"PTM type (me/ac/ph)","value":"ptm_type"},{"label":"Direction","value":"direction"}],
+                value="none", clearable=False, style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("FDR threshold"),
+            dcc.Slider(id="stats-fdr", min=-3, max=-1, step=0.1, value=-1.301,
+                       marks={-3:"0.001",-2:"0.01",-1.301:"0.05",-1:"0.1"},
+                       tooltip={"placement":"bottom","always_visible":False})]),
+        html.Div(style={"flex":"0","minWidth":"120px","display":"flex","alignItems":"flex-end"}, children=[
+            html.Button("Export CSV", id="stats-export", n_clicks=0,
+                        style={"padding":"10px 20px","borderRadius":"8px","border":"none",
+                               "backgroundColor":C["accent"],"color":"white","fontWeight":"600",
+                               "cursor":"pointer","fontSize":"13px"})]),
+    ])
 
     return html.Div([
-        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
-            _sc("Tested",str(n_tested),C["accent"]),
-            _sc("Significant (FDR<0.05)",str(n_sig),C["red"] if n_sig>0 else C["green"]),
-            _sc("Groups",str(len(groups)),C["h4"]),
-        ]),
-        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[
-                _st("Volcano Plot","Kruskal-Wallis FDR vs max fold change"), dcc.Graph(figure=vfig)]),
-            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[
-                _st(f"Top Significant Features (FDR<0.05)","n={n_sig}"), dcc.Graph(figure=sbf)]),
-        ]),
-        html.Div(style=CS, children=[
-            _st("Full Statistical Results","Kruskal-Wallis + BH FDR correction | Editable"),
-            make_table(res, "stats-table")]),
+        html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap"},
+                 children=filter_children),
+        html.Div(id="stats-out"),
     ])
 
 
 @callback(Output("stats-out","children"),
-          Input("stats-design","value"), Input("cur-exp","data"), prevent_initial_call=True)
-def _stats_design(design, exp):
+          Input("stats-design","value"), Input("stats-show","value"),
+          Input("stats-classify","value"), Input("stats-fdr","value"),
+          Input("cur-exp","data"), prevent_initial_call=True)
+def _stats_filtered(design, show, classify, fdr_log, exp):
+    t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
     df = d.get("hptm", d.get("hpf"))
     meta = d.get("metadata", pd.DataFrame())
     if df is None or meta.empty: return html.P("No data.")
 
-    # Filter to design
-    if design != "All" and "Design" in meta.columns:
+    fdr_thresh = 10 ** fdr_log if fdr_log else 0.05
+
+    # Filter to design if applicable
+    if design and design not in ("All", "none") and "Design" in meta.columns:
         meta = meta[meta["Design"].astype(str) == str(design)].copy()
         samps = meta["Sample"].tolist()
-        cols = [c for c in df.columns if c in samps]
-        df = df[cols]
+        cols = [c for c in df.columns if c in samps]; df = df[cols]
 
     groups = sorted(meta["Group"].unique())
     if len(groups) < 2:
-        return html.P(f"Design {design}: only {len(groups)} group(s) found. Need >= 2.", style={"color":C["red"],"padding":"20px"})
+        return html.P(f"Only {len(groups)} group(s). Need >= 2.", style={"color":C["red"],"padding":"20px"})
 
     res = robust_group_test(df, meta, groups)
-    if res.empty:
-        return html.P("Could not compute statistics.", style={"color":C["red"]})
+    if res.empty: return html.P("Could not compute statistics.", style={"color":C["red"]})
 
-    n_sig = int((res["KW_FDR"] < 0.05).sum())
-    n_tested = len(res)
+    res = _enrich_stats(res, groups)
 
-    fc_data = []
+    # Compute FC for volcano
+    fc_list = []
     for _, row in res.iterrows():
         means = [row.get(f"mean_{g}", np.nan) for g in groups]
         means = [m for m in means if not np.isnan(m) and m > 0]
         if len(means) >= 2:
-            max_fc = np.log2(max(means)/min(means))
-            fc_data.append({"PTM":row["PTM"], "maxLog2FC":max_fc,
-                            "negLog10FDR":-np.log10(row["KW_FDR"]+1e-300), "FDR":row["KW_FDR"]})
+            fc_list.append(np.log2(max(means) / min(means)))
+        else:
+            fc_list.append(0)
+    res["maxLog2FC"] = fc_list
 
-    if fc_data:
-        vdf = pd.DataFrame(fc_data)
-        vdf["sig"] = vdf["FDR"] < 0.05
+    n_total = len(res)
+    n_sig = int((res["KW_FDR"] < fdr_thresh).sum())
+    n_up = int(res["Direction"].str.startswith("Up").sum() & (res["KW_FDR"] < fdr_thresh))
+    n_down = n_sig - n_up
+
+    # Apply show filter
+    display_res = res.copy()
+    if show == "sig":
+        display_res = display_res[display_res["KW_FDR"] < fdr_thresh]
+    elif show == "up":
+        display_res = display_res[(display_res["KW_FDR"] < fdr_thresh) & display_res["Direction"].str.startswith("Up")]
+    elif show == "down":
+        display_res = display_res[(display_res["KW_FDR"] < fdr_thresh) & ~display_res["Direction"].str.startswith("Up")]
+
+    # Volcano plot colored by classification
+    vdf = res[res["maxLog2FC"] > 0].copy()
+    vdf["negLog10FDR"] = -np.log10(vdf["KW_FDR"] + 1e-300)
+    color_col = classify if classify != "none" else None
+    if color_col and color_col in ("histone", "ptm_type", "direction"):
+        col_map = {"histone":"Histone","ptm_type":"PTM_type","direction":"Direction"}[color_col]
         vfig = px.scatter(vdf, x="maxLog2FC", y="negLog10FDR", hover_name="PTM",
-                          color="sig", color_discrete_map={True:C["red"],False:C["muted"]})
-        pfig(vfig, 450)
-        vfig.add_hline(y=-np.log10(0.05), line_dash="dash", line_color=C["red"], annotation_text="FDR=0.05")
-        vfig.update_traces(marker=dict(size=8,line=dict(width=0.5,color="white")))
+                          color=col_map, color_discrete_sequence=GC,
+                          labels={"maxLog2FC":"Max |log2(FC)|","negLog10FDR":"-log10(FDR)"})
     else:
-        vfig = go.Figure(); pfig(vfig, 450)
+        vdf["Significant"] = vdf["KW_FDR"] < fdr_thresh
+        vfig = px.scatter(vdf, x="maxLog2FC", y="negLog10FDR", hover_name="PTM",
+                          color="Significant", color_discrete_map={True:C["red"],False:C["muted"]},
+                          labels={"maxLog2FC":"Max |log2(FC)|","negLog10FDR":"-log10(FDR)"})
+    pfig(vfig, 480, n_groups=len(groups))
+    vfig.add_hline(y=-np.log10(fdr_thresh), line_dash="dash", line_color=C["red"],
+                   annotation_text=f"FDR={fdr_thresh:.3f}")
+    vfig.update_traces(marker=dict(size=9, line=dict(width=0.5, color="white")))
+    vfig.update_layout(title=dict(text="Volcano Plot (Kruskal-Wallis)", font=dict(size=18)))
 
-    sig_res = res[res["KW_FDR"] < 0.05].head(30)
-    if not sig_res.empty:
-        sbf = go.Figure(go.Bar(x=-np.log10(sig_res["KW_FDR"].values+1e-300),
-            y=sig_res["PTM"].tolist(), orientation="h",
-            marker=dict(color=-np.log10(sig_res["KW_FDR"].values+1e-300),colorscale="Reds",line=dict(width=0))))
-        pfig(sbf, max(300,len(sig_res)*18))
-        sbf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),margin=dict(l=180),xaxis_title="-log10(FDR)")
+    # Top features bar (use display_res to respect show filter)
+    bar_res = display_res.head(40)
+    if not bar_res.empty:
+        n_bar = len(bar_res)
+        sbf = go.Figure(go.Bar(
+            x=-np.log10(bar_res["KW_FDR"].values + 1e-300),
+            y=bar_res["PTM"].tolist(), orientation="h",
+            marker=dict(color=-np.log10(bar_res["KW_FDR"].values + 1e-300), colorscale="Reds", line=dict(width=0))))
+        pfig(sbf, max(300, n_bar * 20), n_y=n_bar)
+        sbf.update_layout(yaxis=dict(autorange="reversed"),
+                          margin=dict(l=adaptive_margin_l(bar_res["PTM"].tolist())),
+                          xaxis_title="-log10(FDR)",
+                          title=dict(text=f"Top Features ({show})", font=dict(size=18)))
     else:
         sbf = go.Figure(); pfig(sbf, 300)
 
-    design_label = f"Design {design}" if design != "All" else "All designs (pooled)"
-    return html.Div([
+    # Classification summary pie chart
+    if classify != "none" and not display_res.empty:
+        col_map = {"histone":"Histone","ptm_type":"PTM_type","direction":"Direction"}
+        cname = col_map.get(classify, "Histone")
+        if cname in display_res.columns:
+            vc = display_res[cname].value_counts()
+            pief = px.pie(values=vc.values, names=vc.index, color_discrete_sequence=GC,
+                          title=f"Distribution by {cname}")
+            pfig(pief, 380)
+        else:
+            pief = go.Figure(); pfig(pief, 100)
+    else:
+        pief = None
+
+    dur = int((time.time() - t0) * 1000)
+    design_label = f"Design {design}" if design not in ("All", "none", None) else "All"
+    log_analysis(exp, "kruskal_wallis", {"groups": groups, "design": design_label, "fdr": fdr_thresh, "show": show},
+                 n_total, n_sig, f"KW: {n_sig}/{n_total} sig (FDR<{fdr_thresh}), {len(groups)} groups", dur)
+
+    children = [
         html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
-            _sc("Tested",str(n_tested),C["accent"]),
-            _sc("Significant (FDR<0.05)",str(n_sig),C["red"] if n_sig>0 else C["green"]),
-            _sc("Groups",str(len(groups)),C["h4"]),
+            _sc("Tested", str(n_total), C["accent"]),
+            _sc(f"Significant (FDR<{fdr_thresh:.3f})", str(n_sig), C["red"] if n_sig > 0 else C["green"]),
+            _sc("Showing", str(len(display_res)), C["h3"]),
+            _sc("Groups", str(len(groups)), C["h4"]),
         ]),
-        html.P(f"Analysis: {design_label} | Groups: {', '.join(groups)} | n={len(meta)} samples",
+        html.P(f"Analysis: {design_label} | Groups: {', '.join(groups)} | n={len(meta)} samples | {dur}ms",
                style={"color":C["accent"],"fontWeight":"600","fontSize":"14px","marginBottom":"12px"}),
-        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[
-                _st("Volcano Plot",f"Kruskal-Wallis FDR | {design_label}"), dcc.Graph(figure=vfig)]),
-            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[
-                _st(f"Top Significant Features (FDR<0.05)","n={0}".format(n_sig)), dcc.Graph(figure=sbf)]),
-        ]),
-        html.Div(style=CS, children=[
-            _st("Full Statistical Results","Kruskal-Wallis + BH FDR | Editable"),
-            make_table(res, "stats-table")]),
-    ])
+    ]
+
+    row1 = [html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=vfig)])]
+    if pief:
+        row1.append(html.Div(style={**CS,"flex":"0 0 350px"}, children=[dcc.Graph(figure=pief)]))
+    children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=row1))
+
+    children.append(html.Div(style=CS, children=[
+        _st(f"Top Features Bar", f"Showing {len(bar_res)} features | sorted by p-value"),
+        dcc.Graph(figure=sbf)]))
+
+    children.append(html.Div(style=CS, children=[
+        _st("Statistical Results", f"Kruskal-Wallis + BH FDR | {show} | Editable | Export CSV"),
+        make_table(display_res, "stats-table")]))
+
+    return html.Div(children)
+
+
+@callback(Output("download-data","data"),
+          Input("stats-export","n_clicks"), State("cur-exp","data"), prevent_initial_call=True)
+def _stats_export(n, exp):
+    if not n or not exp or exp not in EXP_DATA: return no_update
+    d = EXP_DATA[exp]; df = d.get("hptm", d.get("hpf")); meta = d.get("metadata", pd.DataFrame())
+    if df is None: return no_update
+    groups = sorted(meta["Group"].unique()) if not meta.empty else []
+    if len(groups) < 2: return no_update
+    res = robust_group_test(df, meta, groups)
+    if res.empty: return no_update
+    res = _enrich_stats(res, groups)
+    fname = f"{exp.split('(')[0].strip()}_statistics_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    log_analysis(exp, "export_stats", {"format":"csv","n_rows":len(res)}, len(res), 0, f"Exported {len(res)} rows")
+    return dcc.send_data_frame(res.to_csv, fname, index=False)
 
 
 # ======================================================================
@@ -1813,19 +2199,41 @@ def tab_cmp(d):
     designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
 
     filter_children = [
-        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+        html.Div(style={"flex":"1","minWidth":"180px"}, children=[
             _lbl("Group A"),
             dcc.Dropdown(id="cmp-a",options=[{"label":g,"value":g} for g in groups],
                          value=groups[0],clearable=False,style=DS)]),
-        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+        html.Div(style={"flex":"1","minWidth":"180px"}, children=[
             _lbl("Group B"),
             dcc.Dropdown(id="cmp-b",options=[{"label":g,"value":g} for g in groups],
                          value=groups[1] if len(groups)>1 else groups[0],clearable=False,style=DS)]),
-        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+        html.Div(style={"flex":"1","minWidth":"160px"}, children=[
             _lbl("Data Level"),
             dcc.Dropdown(id="cmp-level",options=[{"label":"hPTM (single)","value":"hptm"},
                          {"label":"hPF (peptidoforms)","value":"hpf"}],
                          value="hptm",clearable=False,style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"140px"}, children=[
+            _lbl("Show"),
+            dcc.Dropdown(id="cmp-show",
+                options=[{"label":"All features","value":"all"},{"label":"Significant only","value":"sig"},
+                         {"label":"Up-regulated","value":"up"},{"label":"Down-regulated","value":"down"}],
+                value="all",clearable=False,style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"140px"}, children=[
+            _lbl("Classify by"),
+            dcc.Dropdown(id="cmp-classify",
+                options=[{"label":"None","value":"none"},{"label":"Histone","value":"histone"},
+                         {"label":"PTM type","value":"ptm_type"},{"label":"Significance","value":"sig"}],
+                value="none",clearable=False,style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"180px"}, children=[
+            _lbl("FDR threshold"),
+            dcc.Slider(id="cmp-fdr", min=-3, max=-1, step=0.1, value=-1.301,
+                       marks={-3:"0.001",-2:"0.01",-1.301:"0.05",-1:"0.1"},
+                       tooltip={"placement":"bottom","always_visible":False})]),
+        html.Div(style={"flex":"0","minWidth":"100px","display":"flex","alignItems":"flex-end","gap":"6px"}, children=[
+            html.Button("Export CSV", id="cmp-export", n_clicks=0,
+                        style={"padding":"10px 16px","borderRadius":"8px","border":"none",
+                               "backgroundColor":C["accent"],"color":"white","fontWeight":"600",
+                               "cursor":"pointer","fontSize":"13px"})]),
     ]
     if designs:
         filter_children.append(
@@ -1842,62 +2250,147 @@ def tab_cmp(d):
     ])
 
 @callback(Output("cmp-out","children"),
-          Input("cmp-a","value"),Input("cmp-b","value"),Input("cmp-level","value"),Input("cur-exp","data"))
-def _cmp(ga, gb, level, exp):
+          Input("cmp-a","value"),Input("cmp-b","value"),Input("cmp-level","value"),
+          Input("cmp-show","value"),Input("cmp-classify","value"),Input("cmp-fdr","value"),
+          Input("cur-exp","data"))
+def _cmp(ga, gb, level, show, classify, fdr_log, exp):
+    t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
     df = d.get(level, d.get("hptm", d.get("hpf")))
     meta = d["metadata"]
     if df is None or df.empty: return html.P("No data for level.")
 
+    fdr_thresh = 10 ** fdr_log if fdr_log else 0.05
+
     mw = pairwise_mw(df, meta, ga, gb)
     if mw.empty: return html.P("Could not compute comparison.")
 
-    n_sig = int((mw["FDR"]<0.05).sum())
+    # Add classification columns
+    h_col, t_col = [], []
+    for _, row in mw.iterrows():
+        h, t = classify_ptm_name(row["PTM"])
+        h_col.append(h); t_col.append(t)
+    mw["Histone"] = h_col; mw["PTM_type"] = t_col
 
-    # Volcano
+    # Direction based on log2FC
+    mw["Direction"] = mw["log2FC"].apply(
+        lambda x: "Up" if x > 0.5 else "Down" if x < -0.5 else "Unchanged")
+    mw["Significant"] = mw["FDR"] < fdr_thresh
+
+    n_total = len(mw)
+    n_sig = int(mw["Significant"].sum())
+    n_up = int(((mw["Direction"]=="Up") & mw["Significant"]).sum())
+    n_down = int(((mw["Direction"]=="Down") & mw["Significant"]).sum())
+
+    # Apply show filter for display
+    display_mw = mw.copy()
+    if show == "sig":
+        display_mw = display_mw[display_mw["Significant"]]
+    elif show == "up":
+        display_mw = display_mw[(display_mw["Direction"]=="Up") & display_mw["Significant"]]
+    elif show == "down":
+        display_mw = display_mw[(display_mw["Direction"]=="Down") & display_mw["Significant"]]
+
+    # Volcano — color by classification or significance
     mw["negLog10FDR"] = -np.log10(mw["FDR"]+1e-300)
-    mw["sig"] = mw["FDR"] < 0.05
-    vf = px.scatter(mw, x="log2FC", y="negLog10FDR", hover_name="PTM",
-                    color="sig", color_discrete_map={True:C["red"],False:C["muted"]},
-                    labels={"log2FC":f"log2(FC) {gb}/{ga}","negLog10FDR":"-log10(FDR)"},
-                    title=f"Volcano: {gb} vs {ga} | Mann-Whitney U + FDR")
-    pfig(vf, 480)
-    vf.add_hline(y=-np.log10(0.05),line_dash="dash",line_color=C["red"],annotation_text="FDR=0.05")
+    if classify != "none":
+        col_map = {"histone":"Histone","ptm_type":"PTM_type","sig":"Direction"}
+        cname = col_map.get(classify, "Histone")
+        vf = px.scatter(mw, x="log2FC", y="negLog10FDR", hover_name="PTM",
+                        color=cname, color_discrete_sequence=GC,
+                        labels={"log2FC":f"log2(FC) {gb}/{ga}","negLog10FDR":"-log10(FDR)"},
+                        title=f"Volcano: {gb} vs {ga} | Mann-Whitney U + FDR")
+    else:
+        color_vals = ["Up" if r["Direction"]=="Up" and r["Significant"] else
+                      "Down" if r["Direction"]=="Down" and r["Significant"] else "NS"
+                      for _, r in mw.iterrows()]
+        mw["_Color"] = color_vals
+        cmap = {"Up":C["red"],"Down":"#2563eb","NS":C["muted"]}
+        vf = px.scatter(mw, x="log2FC", y="negLog10FDR", hover_name="PTM",
+                        color="_Color", color_discrete_map=cmap,
+                        labels={"log2FC":f"log2(FC) {gb}/{ga}","negLog10FDR":"-log10(FDR)"},
+                        title=f"Volcano: {gb} vs {ga} | Mann-Whitney U + FDR")
+    pfig(vf, 480, n_groups=2)
+    vf.add_hline(y=-np.log10(fdr_thresh),line_dash="dash",line_color=C["red"],
+                 annotation_text=f"FDR={fdr_thresh:.3f}")
     vf.add_vline(x=0,line_dash="dash",line_color=C["muted"])
-    vf.update_traces(marker=dict(size=8,line=dict(width=0.5,color="white")))
+    vf.update_traces(marker=dict(size=9,line=dict(width=0.5,color="white")))
 
-    # FC bar
-    fc_sorted = mw.sort_values("log2FC")
+    # FC bar (use display_mw to respect show filter)
+    fc_sorted = display_mw.sort_values("log2FC")
+    n_fc = len(fc_sorted)
     colors = [C["green"] if v>0.5 else C["red"] if v<-0.5 else C["muted"] for v in fc_sorted["log2FC"]]
     ff = go.Figure(go.Bar(x=fc_sorted["log2FC"].values, y=fc_sorted["PTM"].tolist(),
                            orientation="h", marker_color=colors))
-    pfig(ff, max(400, len(fc_sorted)*14))
-    ff.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
-                     margin=dict(l=180),xaxis_title=f"log2(FC) {gb}/{ga}")
+    pfig(ff, max(400, n_fc*16), n_y=n_fc)
+    ff.update_layout(yaxis=dict(autorange="reversed"),
+                     margin=dict(l=adaptive_margin_l(fc_sorted["PTM"].tolist())),
+                     xaxis_title=f"log2(FC) {gb}/{ga}",
+                     title=dict(text=f"Fold Change ({show})", font=dict(size=18)))
     ff.add_vline(x=0,line_color=C["muted"],line_dash="dash")
 
     # MA plot
     mw["A"] = 0.5*(np.log2(mw["mean_A"]+1e-8)+np.log2(mw["mean_B"]+1e-8))
-    maf = px.scatter(mw, x="A", y="log2FC", hover_name="PTM", color="sig",
-                     color_discrete_map={True:C["red"],False:C["muted"]},
-                     title="MA Plot",labels={"A":"Avg Intensity","log2FC":"log2(FC)"})
+    if classify != "none":
+        col_map2 = {"histone":"Histone","ptm_type":"PTM_type","sig":"Direction"}
+        cname2 = col_map2.get(classify, "Histone")
+        maf = px.scatter(mw, x="A", y="log2FC", hover_name="PTM", color=cname2,
+                         color_discrete_sequence=GC,
+                         title="MA Plot",labels={"A":"Avg Intensity","log2FC":"log2(FC)"})
+    else:
+        maf = px.scatter(mw, x="A", y="log2FC", hover_name="PTM", color="_Color",
+                         color_discrete_map={"Up":C["red"],"Down":"#2563eb","NS":C["muted"]},
+                         title="MA Plot",labels={"A":"Avg Intensity","log2FC":"log2(FC)"})
     pfig(maf, 400); maf.add_hline(y=0,line_color=C["muted"],line_dash="dash")
 
+    dur = int((time.time()-t0)*1000)
+    log_analysis(exp, "mann_whitney", {"ga":ga,"gb":gb,"level":level,"fdr":fdr_thresh,"show":show},
+                 n_total, n_sig, f"MW: {ga} vs {gb} | {n_sig}/{n_total} sig, {n_up} up, {n_down} down", dur)
+
+    # Table columns to display
+    tbl_cols = ["PTM","log2FC","pval","FDR","mean_A","mean_B","median_A","median_B","Histone","PTM_type","Direction"]
+    tbl_cols = [c for c in tbl_cols if c in display_mw.columns]
+
     return html.Div([
-        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px"}, children=[
-            _sc(f"Sig (FDR<0.05)",str(n_sig),C["red"]),
-            _sc("Tested",str(len(mw)),C["accent"]),
+        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
+            _sc("Tested",str(n_total),C["accent"]),
+            _sc(f"Sig (FDR<{fdr_thresh:.3f})",str(n_sig),C["red"] if n_sig>0 else C["green"]),
+            _sc("Up",str(n_up),C["red"]),
+            _sc("Down",str(n_down),"#2563eb"),
+            _sc("Showing",str(len(display_mw)),C["h3"]),
         ]),
+        html.P(f"{gb} vs {ga} | {level} | {dur}ms",
+               style={"color":C["accent"],"fontWeight":"600","fontSize":"14px","marginBottom":"12px"}),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=vf)]),
             html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=ff)]),
         ]),
         html.Div(style=CS, children=[dcc.Graph(figure=maf)]),
         html.Div(style=CS, children=[
-            _st("Mann-Whitney Results","FDR-corrected | Editable"),
-            make_table(mw[["PTM","log2FC","pval","FDR","mean_A","mean_B","median_A","median_B"]],"cmp-table")]),
+            _st("Mann-Whitney Results",f"FDR-corrected | {show} | Editable | Classified"),
+            make_table(display_mw[tbl_cols],"cmp-table")]),
     ])
+
+
+@callback(Output("download-data","data", allow_duplicate=True),
+          Input("cmp-export","n_clicks"),
+          State("cmp-a","value"),State("cmp-b","value"),State("cmp-level","value"),
+          State("cur-exp","data"), prevent_initial_call=True)
+def _cmp_export(n, ga, gb, level, exp):
+    if not n or not exp or exp not in EXP_DATA: return no_update
+    d = EXP_DATA[exp]; df = d.get(level, d.get("hptm")); meta = d["metadata"]
+    if df is None: return no_update
+    mw = pairwise_mw(df, meta, ga, gb)
+    if mw.empty: return no_update
+    h_col, t_col = [], []
+    for _, row in mw.iterrows():
+        h, t = classify_ptm_name(row["PTM"]); h_col.append(h); t_col.append(t)
+    mw["Histone"] = h_col; mw["PTM_type"] = t_col
+    mw["Direction"] = mw["log2FC"].apply(lambda x: "Up" if x>0.5 else "Down" if x<-0.5 else "Unchanged")
+    fname = f"{exp.split('(')[0].strip()}_{ga}_vs_{gb}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    log_analysis(exp, "export_comparison", {"ga":ga,"gb":gb,"level":level}, len(mw), 0, f"Exported {ga} vs {gb}")
+    return dcc.send_data_frame(mw.to_csv, fname, index=False)
 
 
 # ======================================================================
@@ -2080,12 +2573,94 @@ def _bi(f, exp):
 
 
 # ======================================================================
+# TAB: ANALYSIS LOG
+# ======================================================================
+
+def tab_log(d, exp):
+    """Analysis history, session info, upload log."""
+    session = get_session_info()
+    history = get_analysis_history(experiment=exp, limit=100)
+    uploads = get_upload_history(limit=50)
+
+    # Session info card
+    sess_card = html.Div(style={**CS,"display":"flex","gap":"16px","flexWrap":"wrap","marginBottom":"16px"}, children=[
+        _sc("Session ID", str(session.get("id","?")), C["accent"]),
+        _sc("Actions", str(session.get("n_actions",0)), C["green"]),
+        _sc("Started", session.get("started","?")[:19] if session.get("started") else "?", C["h3"]),
+        _sc("Last Activity", session.get("last_activity","?")[:19] if session.get("last_activity") else "?", C["h4"]),
+    ])
+
+    # Analysis history table
+    if history:
+        hist_df = pd.DataFrame(history,
+            columns=["ID","Experiment","Type","Parameters","Features","Significant","Summary","Duration(ms)","Timestamp"])
+        hist_table = html.Div(style=CS, children=[
+            _st("Analysis History", f"Last {len(hist_df)} analyses for {exp}"),
+            make_table(hist_df, "log-hist-table")])
+    else:
+        hist_table = html.Div(style=CS, children=[html.P("No analyses recorded yet.", style={"color":C["muted"]})])
+
+    # Upload history table
+    if uploads:
+        upl_df = pd.DataFrame(uploads,
+            columns=["ID","Experiment","Filename","Type","Rows","Cols","Status","Message","Timestamp"])
+        upl_table = html.Div(style=CS, children=[
+            _st("Upload History", f"Last {len(upl_df)} uploads"),
+            make_table(upl_df, "log-upl-table")])
+    else:
+        upl_table = html.Div(style=CS, children=[html.P("No uploads recorded yet.", style={"color":C["muted"]})])
+
+    # Analysis type breakdown chart
+    if history:
+        type_counts = hist_df["Type"].value_counts()
+        pie_fig = px.pie(values=type_counts.values, names=type_counts.index,
+                         color_discrete_sequence=GC, title="Analysis Types")
+        pfig(pie_fig, 350)
+
+        # Timeline of analyses
+        hist_df["ts"] = pd.to_datetime(hist_df["Timestamp"], errors="coerce")
+        timeline = px.scatter(hist_df.dropna(subset=["ts"]), x="ts", y="Type",
+                              size="Features", color="Type", hover_data=["Summary","Significant"],
+                              color_discrete_sequence=GC, title="Analysis Timeline")
+        pfig(timeline, 350)
+
+        charts = html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+            html.Div(style={**CS,"flex":"1","minWidth":"350px"}, children=[dcc.Graph(figure=pie_fig)]),
+            html.Div(style={**CS,"flex":"2","minWidth":"500px"}, children=[dcc.Graph(figure=timeline)]),
+        ])
+    else:
+        charts = html.Div()
+
+    # Export log button
+    export_btn = html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px"}, children=[
+        html.Button("Export Analysis Log CSV", id="log-export", n_clicks=0,
+                    style={"padding":"10px 20px","borderRadius":"8px","border":"none",
+                           "backgroundColor":C["accent"],"color":"white","fontWeight":"600",
+                           "cursor":"pointer","fontSize":"13px"}),
+    ])
+
+    return html.Div([sess_card, export_btn, charts, hist_table, upl_table])
+
+
+@callback(Output("download-data","data", allow_duplicate=True),
+          Input("log-export","n_clicks"), State("cur-exp","data"), prevent_initial_call=True)
+def _log_export(n, exp):
+    if not n: return no_update
+    history = get_analysis_history(experiment=exp, limit=1000)
+    if not history: return no_update
+    hist_df = pd.DataFrame(history,
+        columns=["ID","Experiment","Type","Parameters","Features","Significant","Summary","Duration(ms)","Timestamp"])
+    fname = f"analysis_log_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return dcc.send_data_frame(hist_df.to_csv, fname, index=False)
+
+
+# ======================================================================
 # RUN
 # ======================================================================
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.4")
+    print("  EpiProfile-Plants Dashboard v3.5")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
