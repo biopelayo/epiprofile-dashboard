@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v2.0 — Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.0 — Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -26,25 +26,25 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from scipy.cluster.hierarchy import linkage, leaves_list, dendrogram
+from scipy.cluster.hierarchy import linkage, leaves_list, dendrogram as scipy_dend
 from scipy.spatial.distance import pdist
 from scipy.stats import spearmanr
-from dash import Dash, html, dcc, callback, Input, Output, State, dash_table, ctx
+from dash import Dash, html, dcc, callback, Input, Output, State, dash_table, ctx, no_update
 import dash
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Default experiment paths (used when no CLI arguments are given).
-# Edit these to point to your EpiProfile output directories:
 DEFAULTS = {
     "PXD046788 (Arabidopsis treatments)": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
+    "PXD014739 (Arabidopsis histone)": r"D:\epiprofile_data\PXD014739\RawData",
+    "PXD046034 (Arabidopsis FAS/NAP)": r"E:\EpiProfile_AT_PXD046034_raw\PXD046034\PXD046034",
     "Ontogeny 1exp (Arabidopsis stages)": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\histone_layouts_ontogeny_1exp",
 }
 
-# Parse CLI arguments
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v2.0")
+# Parse CLI
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.0")
 parser.add_argument("dirs", nargs="*", help="Paths to EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050, help="Port (default: 8050)")
 parser.add_argument("--host", default="0.0.0.0", help="Host (default: 0.0.0.0)")
@@ -61,46 +61,115 @@ else:
     if not EXPERIMENTS:
         print("ERROR: No valid experiment directories found.")
         print("Usage:  python epiprofile_dashboard.py <dir1> [dir2] ...")
-        print("Or edit the DEFAULTS dict in the script.")
         sys.exit(1)
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PUBLICATION PLOT TEMPLATE
+# DESIGN SYSTEM — CLEAN WHITE PROFESSIONAL THEME
 # ═══════════════════════════════════════════════════════════════════════════
 
-FONT_FAMILY = "Arial, Helvetica, sans-serif"
+FONT_FAMILY = "'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif"
 
 COLORS = {
-    "bg": "#0f1117", "card": "#1a1d26", "border": "#2d3140",
-    "text": "#e0e0e6", "accent": "#6ea8fe", "accent2": "#ff8a65",
-    "accent3": "#66bb6a", "muted": "#8e95a4", "warn": "#ffd54f",
-    "h3": "#7e57c2", "h4": "#26a69a",
+    "bg": "#f8f9fc",
+    "card": "#ffffff",
+    "border": "#e5e7eb",
+    "text": "#1e293b",
+    "text2": "#475569",
+    "accent": "#4f46e5",
+    "accent_light": "#eef2ff",
+    "accent2": "#dc2626",
+    "accent3": "#059669",
+    "muted": "#94a3b8",
+    "warn": "#d97706",
+    "h3": "#7c3aed",
+    "h4": "#0891b2",
+    "header_bg": "#ffffff",
+    "header_text": "#1e293b",
+    "gradient_start": "#4f46e5",
+    "gradient_end": "#7c3aed",
 }
 
-GROUP_COLORS = px.colors.qualitative.Set2
+GROUP_COLORS = [
+    "#4f46e5", "#059669", "#d97706", "#dc2626", "#0891b2",
+    "#7c3aed", "#db2777", "#0d9488", "#ea580c", "#4338ca",
+    "#16a34a", "#ca8a04", "#9333ea", "#2563eb", "#c026d3",
+]
 
+LOGO_SVG = "data:image/svg+xml;base64," + base64.b64encode(
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">'
+    b'<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">'
+    b'<stop offset="0%" style="stop-color:#4f46e5"/>'
+    b'<stop offset="100%" style="stop-color:#7c3aed"/>'
+    b'</linearGradient></defs>'
+    b'<rect width="36" height="36" rx="8" fill="url(#g)"/>'
+    b'<text x="18" y="24" text-anchor="middle" fill="white" font-family="Arial" font-weight="bold" font-size="18">E</text>'
+    b'</svg>'
+).decode()
+
+# ── Publication Plot Template ──
 PUB_TEMPLATE = go.layout.Template()
 PUB_TEMPLATE.layout = go.Layout(
     font=dict(family=FONT_FAMILY, size=12, color=COLORS["text"]),
-    paper_bgcolor=COLORS["card"], plot_bgcolor="#12141c",
-    xaxis=dict(gridcolor="#252838", gridwidth=1, zerolinecolor="#252838",
-               linecolor=COLORS["border"], linewidth=1, mirror=True,
-               title_font=dict(size=13, family=FONT_FAMILY),
-               tickfont=dict(size=10)),
-    yaxis=dict(gridcolor="#252838", gridwidth=1, zerolinecolor="#252838",
-               linecolor=COLORS["border"], linewidth=1, mirror=True,
-               title_font=dict(size=13, family=FONT_FAMILY),
-               tickfont=dict(size=10)),
-    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
+    paper_bgcolor="#ffffff",
+    plot_bgcolor="#ffffff",
+    xaxis=dict(
+        gridcolor="#f1f5f9", gridwidth=1, zerolinecolor="#e2e8f0",
+        linecolor="#cbd5e1", linewidth=1, mirror=True,
+        title_font=dict(size=13, family=FONT_FAMILY, color="#334155"),
+        tickfont=dict(size=10, color="#64748b"),
+    ),
+    yaxis=dict(
+        gridcolor="#f1f5f9", gridwidth=1, zerolinecolor="#e2e8f0",
+        linecolor="#cbd5e1", linewidth=1, mirror=True,
+        title_font=dict(size=13, family=FONT_FAMILY, color="#334155"),
+        tickfont=dict(size=10, color="#64748b"),
+    ),
+    legend=dict(bgcolor="rgba(255,255,255,0.95)", font=dict(size=10, color="#334155"),
+                bordercolor="#e5e7eb", borderwidth=1),
     margin=dict(t=40, b=50, l=60, r=20),
     colorway=GROUP_COLORS,
 )
 
+# ── Card styles ──
 card_style = {
-    "backgroundColor": COLORS["card"], "borderRadius": "10px",
-    "border": f"1px solid {COLORS['border']}", "padding": "20px",
-    "marginBottom": "16px", "boxShadow": "0 2px 8px rgba(0,0,0,0.3)",
+    "backgroundColor": "#ffffff",
+    "borderRadius": "12px",
+    "border": "1px solid #e5e7eb",
+    "padding": "24px",
+    "marginBottom": "16px",
+    "boxShadow": "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03)",
 }
+
+# ── DataTable styles ──
+TABLE_STYLE_CELL = {
+    "backgroundColor": "#ffffff",
+    "color": COLORS["text"],
+    "border": "1px solid #f1f5f9",
+    "fontSize": "12px",
+    "textAlign": "left",
+    "padding": "8px 12px",
+    "fontFamily": FONT_FAMILY,
+    "minWidth": "80px",
+    "maxWidth": "280px",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+}
+TABLE_STYLE_HEADER = {
+    "backgroundColor": "#f8fafc",
+    "fontWeight": "600",
+    "color": "#334155",
+    "borderBottom": f"2px solid {COLORS['accent']}",
+    "fontSize": "11px",
+    "textTransform": "uppercase",
+    "letterSpacing": "0.5px",
+}
+TABLE_STYLE_DATA_COND = [
+    {"if": {"state": "active"}, "backgroundColor": "#eef2ff", "border": f"1px solid {COLORS['accent']}"},
+    {"if": {"row_index": "odd"}, "backgroundColor": "#fafbfe"},
+]
+
+# ── Dropdown style ──
+DROPDOWN_STYLE = {"fontSize": "13px", "borderRadius": "8px"}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # DATA LOADERS
@@ -109,6 +178,27 @@ card_style = {
 def try_read_tsv(path):
     """Read a file that could be TSV disguised as .xls or actual .tsv"""
     return pd.read_csv(path, sep="\t")
+
+
+def find_file_recursive(base_dir, filenames):
+    """Search for a file by name in base_dir and up to 3 levels deep."""
+    if isinstance(filenames, str):
+        filenames = [filenames]
+    # First check base_dir
+    for fname in filenames:
+        fpath = os.path.join(base_dir, fname)
+        if os.path.exists(fpath):
+            return fpath
+    # Walk up to 3 levels deep
+    for root, dirs, files in os.walk(base_dir):
+        depth = root.replace(base_dir, "").count(os.sep)
+        if depth > 3:
+            dirs.clear()
+            continue
+        for fname in filenames:
+            if fname in files:
+                return os.path.join(root, fname)
+    return None
 
 
 def load_experiment(base_dir):
@@ -130,46 +220,68 @@ def load_experiment(base_dir):
         fpath = os.path.join(ld, fname)
         if not os.path.exists(fpath):
             fpath = os.path.join(base_dir, fname)
+        if not os.path.exists(fpath):
+            # Try recursive search
+            found = find_file_recursive(base_dir, fname)
+            if found:
+                fpath = found
         if os.path.exists(fpath):
-            df = try_read_tsv(fpath)
-            df.columns = ["PTM"] + [c.split(",", 1)[1] if "," in c else c for c in df.columns[1:]]
-            df = df.set_index("PTM")
-            df = df.apply(pd.to_numeric, errors="coerce")
-            data["single_ptms"] = df
-            break
+            try:
+                df = try_read_tsv(fpath)
+                df.columns = ["PTM"] + [c.split(",", 1)[1] if "," in c else c for c in df.columns[1:]]
+                df = df.set_index("PTM")
+                df = df.apply(pd.to_numeric, errors="coerce")
+                data["single_ptms"] = df
+                break
+            except Exception:
+                pass
 
     # ── Load histone_ratios.xls (PXD format with ratio+area blocks) ──
     for fname in ["histone_ratios.xls", "histone_ratios.tsv"]:
         fpath = os.path.join(base_dir, fname)
+        if not os.path.exists(fpath):
+            found = find_file_recursive(base_dir, fname)
+            if found:
+                fpath = found
         if os.path.exists(fpath):
-            raw = try_read_tsv(fpath)
-            sep_idx = None
-            for i, col in enumerate(raw.columns):
-                if "Unnamed" in str(col) and i > 0:
-                    sep_idx = i
-                    break
-            if sep_idx:
-                ratios = raw.iloc[:, :sep_idx].copy()
-                ratios.columns = ["PTM"] + [c.split(",", 1)[1] if "," in c else c for c in ratios.columns[1:]]
-                ratios = ratios.iloc[1:].reset_index(drop=True).set_index("PTM")
-                ratios = ratios.apply(pd.to_numeric, errors="coerce")
-                data["ratios"] = ratios
+            try:
+                raw = try_read_tsv(fpath)
+                sep_idx = None
+                for i, col in enumerate(raw.columns):
+                    if "Unnamed" in str(col) and i > 0:
+                        sep_idx = i
+                        break
+                if sep_idx:
+                    ratios = raw.iloc[:, :sep_idx].copy()
+                    ratios.columns = ["PTM"] + [c.split(",", 1)[1] if "," in c else c for c in ratios.columns[1:]]
+                    ratios = ratios.iloc[1:].reset_index(drop=True).set_index("PTM")
+                    ratios = ratios.apply(pd.to_numeric, errors="coerce")
+                    data["ratios"] = ratios
 
-                areas = raw.iloc[:, sep_idx + 1:].copy()
-                areas.insert(0, "PTM", raw.iloc[:, 0])
-                areas.columns = ["PTM"] + [re.sub(r"\.\d+$", "", c.split(",", 1)[1]) if "," in str(c) else str(c) for c in areas.columns[1:]]
-                areas = areas.iloc[1:].reset_index(drop=True).set_index("PTM")
-                areas = areas.apply(pd.to_numeric, errors="coerce")
-                data["areas"] = areas
-            break
+                    areas = raw.iloc[:, sep_idx + 1:].copy()
+                    areas.insert(0, "PTM", raw.iloc[:, 0])
+                    areas.columns = ["PTM"] + [re.sub(r"\.\d+$", "", c.split(",", 1)[1]) if "," in str(c) else str(c) for c in areas.columns[1:]]
+                    areas = areas.iloc[1:].reset_index(drop=True).set_index("PTM")
+                    areas = areas.apply(pd.to_numeric, errors="coerce")
+                    data["areas"] = areas
+                break
+            except Exception:
+                pass
 
     # ── Load phenodata if present ──
     for fname in ["phenodata_arabidopsis_project.tsv", "phenodata.tsv"]:
         fpath = os.path.join(base_dir, fname)
         if not os.path.exists(fpath):
             fpath = os.path.join(ld, fname)
+        if not os.path.exists(fpath):
+            found = find_file_recursive(base_dir, fname)
+            if found:
+                fpath = found
         if os.path.exists(fpath):
-            data["phenodata"] = pd.read_csv(fpath, sep="\t")
+            try:
+                data["phenodata"] = pd.read_csv(fpath, sep="\t")
+            except Exception:
+                pass
             break
 
     # ── Build sample metadata ──
@@ -189,6 +301,10 @@ def load_experiment(base_dir):
 
     # ── Parse logs ──
     log_path = os.path.join(base_dir, "histone_logs.txt")
+    if not os.path.exists(log_path):
+        found = find_file_recursive(base_dir, "histone_logs.txt")
+        if found:
+            log_path = found
     if os.path.exists(log_path):
         data["logs"] = parse_logs(log_path)
     else:
@@ -200,7 +316,32 @@ def load_experiment(base_dir):
     # ── Parse all detail XLS for area/RT data ──
     data["all_detail"] = load_all_detail(ld, folders)
 
+    # ── Build experiment description ──
+    data["description"] = build_description(data)
+
     return data
+
+
+def build_description(data):
+    """Auto-generate experiment description from data."""
+    desc = []
+    meta = data.get("metadata")
+    if meta is not None and not meta.empty:
+        n = len(meta)
+        groups = meta["Group"].unique()
+        tissues = meta["Tissue"].unique() if "Tissue" in meta.columns else []
+        desc.append(f"{n} samples")
+        desc.append(f"{len(groups)} groups: {', '.join(sorted(groups)[:8])}")
+        if len(tissues) > 1:
+            desc.append(f"Tissues: {', '.join(sorted(tissues))}")
+    if "single_ptms" in data:
+        desc.append(f"{data['single_ptms'].shape[0]} single PTMs")
+    if "ratios" in data:
+        desc.append(f"{data['ratios'].shape[0]} full PTM ratios")
+    psm = data.get("all_psm", pd.DataFrame())
+    if not psm.empty:
+        desc.append(f"{len(psm):,} PSMs")
+    return " · ".join(desc) if desc else "Experiment loaded"
 
 
 def build_metadata(sample_names, phenodata=None):
@@ -213,21 +354,16 @@ def build_metadata(sample_names, phenodata=None):
     meta = pd.DataFrame(records)
 
     if phenodata is not None and "Sample_Name" in phenodata.columns:
-        # Try to merge on sample name suffix
         pheno = phenodata.copy()
-        # Extract number prefix from Sample_Name for matching
         pheno["_num"] = pheno["Sample_Name"].str.extract(r"^(\d+)-").astype(float)
         meta["_num"] = meta["Sample"].str.extract(r"^(\d+)").astype(float) if meta["Sample"].str.match(r"^\d").any() else range(len(meta))
-
         if "Sample_Group" in pheno.columns:
             merge_map = dict(zip(pheno["Sample_Name"], pheno["Sample_Group"]))
-            # Also try matching by number
             num_map = dict(zip(pheno["_num"].dropna(), pheno.loc[pheno["_num"].notna(), "Sample_Group"]))
 
             def get_group(row):
                 if row["Sample"] in merge_map:
                     return merge_map[row["Sample"]]
-                # Try by extracting the sample part
                 for k, v in merge_map.items():
                     if str(k).split("-", 1)[-1] if "-" in str(k) else str(k) in row["Sample"]:
                         return v
@@ -255,7 +391,6 @@ def parse_sample_name(name):
         treatment = "1y-CTR"
         rest = name.replace("1y-CTR_", "")
     elif "-" in name and name[0].isdigit():
-        # Ontogeny format: 20250506-05-2025017-1
         parts = name.split("-")
         treatment = parts[-1] if len(parts) >= 4 else name
         rest = name
@@ -273,7 +408,7 @@ def parse_sample_name(name):
 
 def parse_logs(path):
     """Parse histone_logs.txt."""
-    with open(path, "r") as f:
+    with open(path, "r", errors="replace") as f:
         content = f.read()
     samples = []
     current_sample = None
@@ -347,16 +482,14 @@ def load_all_detail(layouts_dir, folders):
 
 def parse_detail_xls(path):
     """Parse a detail XLS file with [area] and [rt] sections."""
-    with open(path, "r") as f:
+    with open(path, "r", errors="replace") as f:
         lines = f.readlines()
     if not lines:
         return None
-
     peptide_seq = lines[0].strip()
     area_rows, rt_rows = [], []
     section = None
     area_header, rt_header = None, None
-
     for line in lines[1:]:
         line = line.rstrip()
         if line == "[area]":
@@ -367,7 +500,6 @@ def parse_detail_xls(path):
             continue
         elif not line:
             continue
-
         if section == "area":
             parts = line.split("\t")
             if parts[0] == "peptide":
@@ -380,21 +512,16 @@ def parse_detail_xls(path):
                 rt_header = parts
             else:
                 rt_rows.append(parts)
-
-    # Extract total area and ratio for each modification
     mods = []
     for row in area_rows:
         mod_name = row[0]
-        # Find total column (second to last pair)
         total_area = 0
         ratio = 0
         try:
-            # Total is at -2, fraction at -1
             total_area = float(row[-2]) if len(row) >= 2 else 0
             ratio = float(row[-1]) if len(row) >= 1 else 0
         except (ValueError, IndexError):
             pass
-        # Find RT
         rt_val = 0
         for rrow in rt_rows:
             if rrow[0] == mod_name and len(rrow) > 1:
@@ -405,12 +532,11 @@ def parse_detail_xls(path):
                 break
         mods.append({"peptide": peptide_seq, "modification": mod_name,
                      "total_area": total_area, "ratio": ratio, "rt": rt_val})
-
     return {"peptide": peptide_seq, "modifications": mods}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# LOAD DEFAULT EXPERIMENT
+# LOAD EXPERIMENTS
 # ═══════════════════════════════════════════════════════════════════════════
 
 print("Loading experiments...")
@@ -430,98 +556,206 @@ for name, path in EXPERIMENTS.items():
         if psm is not None and not psm.empty:
             print(f"    PSM identifications: {len(psm)}")
         print(f"    Detail records: {len(EXP_DATA[name].get('all_detail', []))}")
+        print(f"    → {EXP_DATA[name].get('description', '')}")
 
 DEFAULT_EXP = list(EXP_DATA.keys())[0] if EXP_DATA else None
 
 # ═══════════════════════════════════════════════════════════════════════════
-# APP
+# APP INITIALIZATION
 # ═══════════════════════════════════════════════════════════════════════════
 
 app = Dash(__name__, suppress_callback_exceptions=True)
-app.title = "EpiProfile-Plants v2.0"
+app.title = "EpiProfile-Plants Dashboard"
 
-tab_style = {"color": COLORS["muted"], "backgroundColor": COLORS["card"],
-             "borderColor": COLORS["border"], "padding": "8px 16px", "fontSize": "13px"}
-tab_selected = {"color": COLORS["accent"], "backgroundColor": COLORS["bg"],
-                "borderTop": f"2px solid {COLORS['accent']}", "padding": "8px 16px", "fontSize": "13px"}
+# ── Tab styling ──
+tab_style = {
+    "color": "#64748b",
+    "backgroundColor": "#ffffff",
+    "border": "none",
+    "borderBottom": "2px solid transparent",
+    "padding": "10px 20px",
+    "fontSize": "13px",
+    "fontWeight": "500",
+    "fontFamily": FONT_FAMILY,
+}
+tab_selected = {
+    "color": COLORS["accent"],
+    "backgroundColor": "#ffffff",
+    "border": "none",
+    "borderBottom": f"2px solid {COLORS['accent']}",
+    "padding": "10px 20px",
+    "fontSize": "13px",
+    "fontWeight": "600",
+    "fontFamily": FONT_FAMILY,
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LAYOUT
+# ═══════════════════════════════════════════════════════════════════════════
 
 app.layout = html.Div(
-    style={"backgroundColor": COLORS["bg"], "minHeight": "100vh", "fontFamily": FONT_FAMILY,
-           "color": COLORS["text"]},
+    style={
+        "backgroundColor": COLORS["bg"],
+        "minHeight": "100vh",
+        "fontFamily": FONT_FAMILY,
+        "color": COLORS["text"],
+    },
     children=[
         # ── HEADER ──
-        html.Div(style={"backgroundColor": COLORS["card"], "borderBottom": f"1px solid {COLORS['border']}",
-                         "padding": "12px 32px", "display": "flex", "alignItems": "center", "gap": "20px",
-                         "flexWrap": "wrap"},
-                 children=[
-                     html.Div([
-                         html.H1("EpiProfile-Plants", style={"margin": "0", "fontSize": "22px",
-                                                              "color": COLORS["accent"], "letterSpacing": "1px"}),
-                         html.Span("Interactive PTM Dashboard v2.0", style={"color": COLORS["muted"], "fontSize": "11px"}),
-                     ]),
-                     html.Div(style={"flex": "1"}),
-                     html.Div([
-                         html.Label("Experiment:", style={"color": COLORS["muted"], "fontSize": "11px", "marginRight": "8px"}),
-                         dcc.Dropdown(id="exp-selector",
-                                      options=[{"label": k, "value": k} for k in EXP_DATA.keys()],
-                                      value=DEFAULT_EXP, clearable=False,
-                                      style={"width": "340px", "backgroundColor": COLORS["bg"], "fontSize": "12px"}),
-                     ], style={"display": "flex", "alignItems": "center"}),
-                 ]),
+        html.Div(
+            style={
+                "backgroundColor": "#ffffff",
+                "borderBottom": "1px solid #e5e7eb",
+                "padding": "0 32px",
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "20px",
+                "height": "64px",
+                "flexWrap": "wrap",
+            },
+            children=[
+                # Logo + Title
+                html.Div(
+                    style={"display": "flex", "alignItems": "center", "gap": "12px"},
+                    children=[
+                        html.Img(src=LOGO_SVG, style={"height": "32px", "width": "32px"}),
+                        html.Div([
+                            html.H1(
+                                "EpiProfile-Plants",
+                                style={
+                                    "margin": "0", "fontSize": "18px",
+                                    "fontWeight": "700", "color": COLORS["text"],
+                                    "letterSpacing": "-0.3px",
+                                },
+                            ),
+                            html.Span(
+                                "Interactive PTM Dashboard v3.0",
+                                style={
+                                    "color": COLORS["muted"], "fontSize": "11px",
+                                    "fontWeight": "400",
+                                },
+                            ),
+                        ]),
+                    ],
+                ),
+                html.Div(style={"flex": "1"}),
+                # Experiment selector
+                html.Div(
+                    style={"display": "flex", "alignItems": "center", "gap": "8px"},
+                    children=[
+                        html.Span("Experiment", style={"color": COLORS["muted"], "fontSize": "11px", "fontWeight": "500", "textTransform": "uppercase", "letterSpacing": "0.5px"}),
+                        dcc.Dropdown(
+                            id="exp-selector",
+                            options=[{"label": k, "value": k} for k in EXP_DATA.keys()],
+                            value=DEFAULT_EXP,
+                            clearable=False,
+                            style={"width": "360px", **DROPDOWN_STYLE},
+                        ),
+                    ],
+                ),
+            ],
+        ),
+
+        # ── Experiment description bar ──
+        html.Div(
+            id="exp-desc-bar",
+            style={
+                "backgroundColor": COLORS["accent_light"],
+                "padding": "6px 32px",
+                "fontSize": "12px",
+                "color": COLORS["accent"],
+                "fontWeight": "500",
+                "borderBottom": "1px solid #e5e7eb",
+            },
+        ),
 
         # ── TABS ──
-        dcc.Tabs(id="main-tabs", value="tab-ratios",
-                 style={"backgroundColor": COLORS["card"]},
-                 colors={"border": COLORS["border"], "primary": COLORS["accent"], "background": COLORS["card"]},
-                 children=[
-                     dcc.Tab(label="Histone Ratios", value="tab-ratios", style=tab_style, selected_style=tab_selected),
-                     dcc.Tab(label="Single PTMs", value="tab-single", style=tab_style, selected_style=tab_selected),
-                     dcc.Tab(label="QC Dashboard", value="tab-qc", style=tab_style, selected_style=tab_selected),
-                     dcc.Tab(label="PSM Explorer", value="tab-psm", style=tab_style, selected_style=tab_selected),
-                     dcc.Tab(label="Sample Browser", value="tab-browser", style=tab_style, selected_style=tab_selected),
-                     dcc.Tab(label="Comparisons", value="tab-compare", style=tab_style, selected_style=tab_selected),
-                     dcc.Tab(label="Correlations", value="tab-corr", style=tab_style, selected_style=tab_selected),
-                 ]),
+        dcc.Tabs(
+            id="main-tabs",
+            value="tab-ratios",
+            style={"backgroundColor": "#ffffff", "borderBottom": "1px solid #e5e7eb"},
+            colors={"border": "transparent", "primary": COLORS["accent"], "background": "#ffffff"},
+            children=[
+                dcc.Tab(label="Histone Ratios", value="tab-ratios", style=tab_style, selected_style=tab_selected),
+                dcc.Tab(label="Single PTMs", value="tab-single", style=tab_style, selected_style=tab_selected),
+                dcc.Tab(label="QC Dashboard", value="tab-qc", style=tab_style, selected_style=tab_selected),
+                dcc.Tab(label="PSM Explorer", value="tab-psm", style=tab_style, selected_style=tab_selected),
+                dcc.Tab(label="Sample Browser", value="tab-browser", style=tab_style, selected_style=tab_selected),
+                dcc.Tab(label="Comparisons", value="tab-compare", style=tab_style, selected_style=tab_selected),
+                dcc.Tab(label="Correlations", value="tab-corr", style=tab_style, selected_style=tab_selected),
+            ],
+        ),
 
-        html.Div(id="tab-content", style={"padding": "20px 32px"}),
+        # ── Tab content ──
+        html.Div(id="tab-content", style={"padding": "24px 32px", "maxWidth": "1600px", "margin": "0 auto"}),
 
-        # ── Hidden store for current experiment data ──
+        # ── Footer ──
+        html.Div(
+            style={
+                "textAlign": "center", "padding": "20px 32px",
+                "color": COLORS["muted"], "fontSize": "11px",
+                "borderTop": "1px solid #e5e7eb", "marginTop": "40px",
+            },
+            children=[
+                html.Span("EpiProfile-Plants Dashboard v3.0 · "),
+                html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
+                        style={"color": COLORS["accent"], "textDecoration": "none"}, target="_blank"),
+            ],
+        ),
+
+        # ── Stores ──
         dcc.Store(id="current-exp", data=DEFAULT_EXP),
-    ]
+    ],
 )
 
 
-# Sync experiment selector with store
+# ═══════════════════════════════════════════════════════════════════════════
+# CALLBACKS — ROUTING
+# ═══════════════════════════════════════════════════════════════════════════
+
 @callback(Output("current-exp", "data"), Input("exp-selector", "value"))
 def update_exp_store(exp):
     return exp
 
 
-# ── Tab router ──
+@callback(Output("exp-desc-bar", "children"), Input("current-exp", "data"))
+def update_desc_bar(exp):
+    if exp and exp in EXP_DATA:
+        return EXP_DATA[exp].get("description", "")
+    return ""
+
+
 @callback(Output("tab-content", "children"), Input("main-tabs", "value"), Input("current-exp", "data"))
 def render_tab(tab, exp):
     if not exp or exp not in EXP_DATA:
-        return html.Div("No experiment loaded", style={"color": COLORS["accent2"], "textAlign": "center", "padding": "60px"})
+        return html.Div(
+            "No experiment loaded — check paths in DEFAULTS",
+            style={"color": COLORS["accent2"], "textAlign": "center", "padding": "80px", "fontSize": "16px"},
+        )
     d = EXP_DATA[exp]
-    if tab == "tab-ratios":
-        return build_ratios_tab(d)
-    elif tab == "tab-single":
-        return build_single_tab(d)
-    elif tab == "tab-qc":
-        return build_qc_tab(d)
-    elif tab == "tab-psm":
-        return build_psm_tab(d)
-    elif tab == "tab-browser":
-        return build_browser_tab(d)
-    elif tab == "tab-compare":
-        return build_compare_tab(d)
-    elif tab == "tab-corr":
-        return build_corr_tab(d)
+    builders = {
+        "tab-ratios": build_ratios_tab,
+        "tab-single": build_single_tab,
+        "tab-qc": build_qc_tab,
+        "tab-psm": build_psm_tab,
+        "tab-browser": build_browser_tab,
+        "tab-compare": build_compare_tab,
+        "tab-corr": build_corr_tab,
+    }
+    builder = builders.get(tab)
+    if builder:
+        try:
+            return builder(d)
+        except Exception as e:
+            return html.Div([
+                html.H3("Error rendering tab", style={"color": COLORS["accent2"]}),
+                html.Pre(str(e), style={"fontSize": "12px", "color": COLORS["text2"]}),
+            ])
     return html.Div("Select a tab")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# HELPER: publication-quality figure defaults
+# HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
 def pub_fig(fig, height=500):
@@ -532,7 +766,8 @@ def pub_fig(fig, height=500):
 def pub_heatmap(z, x, y, colorscale="Viridis", title="", zmin=None, zmax=None, height=600):
     fig = go.Figure(data=go.Heatmap(
         z=z, x=x, y=y, colorscale=colorscale,
-        colorbar=dict(thickness=15, len=0.9, title=dict(text=title, side="right", font=dict(size=10))),
+        colorbar=dict(thickness=12, len=0.9, title=dict(text=title, side="right", font=dict(size=10)),
+                      tickfont=dict(size=9)),
         hoverongaps=False, zmin=zmin, zmax=zmax,
     ))
     fig.update_layout(
@@ -562,30 +797,98 @@ def cluster_order(df, axis=0, method="ward"):
 def get_group_colors(groups):
     """Consistent color mapping for groups."""
     unique = sorted(set(groups))
-    cmap = {g: GROUP_COLORS[i % len(GROUP_COLORS)] for i, g in enumerate(unique)}
-    return cmap
+    return {g: GROUP_COLORS[i % len(GROUP_COLORS)] for i, g in enumerate(unique)}
+
+
+def _stat_card(label, value, color, icon=""):
+    """Minimal stat card for summary rows."""
+    return html.Div(
+        style={
+            **card_style, "flex": "1", "minWidth": "130px",
+            "textAlign": "center", "padding": "16px 12px",
+        },
+        children=[
+            html.Div(icon, style={"fontSize": "20px", "marginBottom": "4px"}) if icon else None,
+            html.H2(value, style={"color": color, "margin": "0", "fontSize": "28px", "fontWeight": "700"}),
+            html.P(label, style={"color": COLORS["muted"], "margin": "4px 0 0 0", "fontSize": "11px",
+                                 "textTransform": "uppercase", "letterSpacing": "0.5px", "fontWeight": "500"}),
+        ],
+    )
+
+
+def _section_title(text, subtitle=""):
+    """Section header inside cards."""
+    children = [
+        html.H3(text, style={
+            "color": COLORS["text"], "marginTop": "0", "marginBottom": "4px",
+            "fontSize": "15px", "fontWeight": "600",
+        }),
+    ]
+    if subtitle:
+        children.append(
+            html.P(subtitle, style={"color": COLORS["muted"], "margin": "0 0 12px 0", "fontSize": "12px"})
+        )
+    return html.Div(children)
+
+
+def make_editable_table(df, table_id, max_rows=200):
+    """Create an editable, sortable, filterable DataTable."""
+    display_df = df.head(max_rows).reset_index() if df.index.name else df.head(max_rows)
+    # Round numeric columns
+    for col in display_df.select_dtypes(include=[np.number]).columns:
+        display_df[col] = display_df[col].round(6)
+
+    return dash_table.DataTable(
+        id=table_id,
+        data=display_df.to_dict("records"),
+        columns=[
+            {"name": str(c), "id": str(c), "deletable": True, "renamable": True,
+             "type": "numeric" if pd.api.types.is_numeric_dtype(display_df[c]) else "text"}
+            for c in display_df.columns
+        ],
+        editable=True,
+        row_deletable=True,
+        filter_action="native",
+        sort_action="native",
+        sort_mode="multi",
+        page_action="native",
+        page_size=25,
+        export_format="csv",
+        export_headers="display",
+        style_cell=TABLE_STYLE_CELL,
+        style_header=TABLE_STYLE_HEADER,
+        style_data_conditional=TABLE_STYLE_DATA_COND,
+        style_table={"overflowX": "auto", "borderRadius": "8px"},
+        style_filter={"backgroundColor": "#f8fafc", "fontSize": "11px"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TAB 1: HISTONE RATIOS
+# TAB 1: HISTONE RATIOS (with advanced filtering)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_ratios_tab(d):
     has_ratios = "ratios" in d
-    if not has_ratios:
+    has_areas = "areas" in d
+    if not has_ratios and not has_areas:
         return html.Div(style=card_style, children=[
-            html.H3("Histone Ratios", style={"color": COLORS["accent"]}),
-            html.P("No histone_ratios.xls found for this experiment. Use the Single PTMs tab instead.",
+            _section_title("Histone Ratios"),
+            html.P("No histone_ratios.xls found. Use the Single PTMs tab.",
                    style={"color": COLORS["muted"]}),
         ])
 
-    ratios = d["ratios"]
+    ratios = d.get("ratios")
+    areas = d.get("areas")
     meta = d["metadata"]
     groups = sorted(meta["Group"].unique())
 
+    # Use ratios if available, else areas
+    df = ratios if ratios is not None else areas
+    data_label = "Ratio" if ratios is not None else "Area"
+
     # Filter PTMs (remove peptide header rows)
-    ptm_idx = [i for i in ratios.index if not (i.endswith(")") and "(" in i)]
-    df = ratios.loc[ptm_idx].dropna(how="all")
+    ptm_idx = [i for i in df.index if not (i.endswith(")") and "(" in i)]
+    df = df.loc[ptm_idx].dropna(how="all")
     df = df[(df != 0).any(axis=1)]
 
     # Order columns by group
@@ -593,55 +896,112 @@ def build_ratios_tab(d):
     col_order = [s for s in meta_sorted["Sample"] if s in df.columns]
     df = df[col_order]
 
-    # ── Heatmap ──
+    # ── Parse histone type and region ──
+    ptm_info = []
+    for idx in df.index:
+        parts = idx.split(" ", 1)
+        region = parts[0] if parts else idx
+        mod = parts[1] if len(parts) > 1 else "unmod"
+        histone = "H3" if region.startswith("H3") else "H4" if region.startswith("H4") else "Other"
+        ptm_info.append({"PTM": idx, "Histone": histone, "Region": region, "Modification": mod})
+    ptm_df = pd.DataFrame(ptm_info)
+    histones = sorted(ptm_df["Histone"].unique())
+    regions = sorted(ptm_df["Region"].unique())
+
+    # ── Heatmap (full) ──
     heatmap = pub_heatmap(df.values, df.columns.tolist(), df.index.tolist(),
-                          colorscale="Viridis", title="Ratio", height=max(500, len(df) * 7))
+                          colorscale="Viridis", title=data_label, height=max(500, len(df) * 7))
 
     # ── Top variable PTMs ──
     var_s = df.var(axis=1).dropna().sort_values(ascending=False).head(25)
-    var_fig = go.Figure(go.Bar(x=var_s.values, y=var_s.index.tolist(), orientation="h",
-                               marker=dict(color=var_s.values, colorscale="Plasma")))
+    var_fig = go.Figure(go.Bar(
+        x=var_s.values, y=var_s.index.tolist(), orientation="h",
+        marker=dict(color=var_s.values, colorscale="Viridis", line=dict(width=0)),
+    ))
     pub_fig(var_fig, 450)
-    var_fig.update_layout(yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
-                          margin=dict(l=200), xaxis_title="Variance")
+    var_fig.update_layout(
+        yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
+        margin=dict(l=200), xaxis_title="Variance",
+    )
 
     # ── Box per group for top PTM ──
-    top_ptm = var_s.index[0]
+    top_ptm = var_s.index[0] if len(var_s) > 0 else df.index[0]
     melt = df.loc[[top_ptm]].T.reset_index()
-    melt.columns = ["Sample", "Ratio"]
+    melt.columns = ["Sample", data_label]
     melt = melt.merge(meta, on="Sample")
-    box_fig = px.box(melt, x="Group", y="Ratio", color="Tissue", points="all",
-                     title=f"{top_ptm}", color_discrete_map={"Root": COLORS["accent2"],
-                                                              "Shoot": COLORS["accent3"], "Whole": COLORS["accent"]})
+    box_fig = px.box(melt, x="Group", y=data_label, color="Group", points="all",
+                     title=f"{top_ptm}", color_discrete_sequence=GROUP_COLORS)
     pub_fig(box_fig, 380)
 
-    # ── Stacked bar of peptide regions ──
-    # Group PTMs by H3/H4 region
-    region_counts = {}
-    for idx in df.index:
-        prefix = idx.split(" ")[0] if " " in idx else idx
-        histone = "H3" if prefix.startswith("H3") else "H4" if prefix.startswith("H4") else "Other"
-        region_counts[histone] = region_counts.get(histone, 0) + 1
-    pie_fig = px.pie(values=list(region_counts.values()), names=list(region_counts.keys()),
-                     title="PTMs by Histone", color_discrete_sequence=[COLORS["h3"], COLORS["h4"], COLORS["muted"]])
-    pub_fig(pie_fig, 300)
+    # ── PTM region pie ──
+    region_counts = ptm_df["Histone"].value_counts()
+    pie_fig = px.pie(
+        values=region_counts.values, names=region_counts.index,
+        title="PTMs by Histone Type",
+        color_discrete_map={"H3": COLORS["h3"], "H4": COLORS["h4"], "Other": COLORS["muted"]},
+    )
+    pub_fig(pie_fig, 280)
+    pie_fig.update_traces(textinfo="label+percent", textfont_size=11)
 
     return html.Div([
+        # ── Filter controls ──
+        html.Div(style={**card_style, "display": "flex", "gap": "16px", "alignItems": "flex-end", "flexWrap": "wrap"}, children=[
+            html.Div(style={"flex": "1", "minWidth": "150px"}, children=[
+                html.Label("Histone Type", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500", "textTransform": "uppercase", "letterSpacing": "0.5px"}),
+                dcc.Dropdown(id="ratios-histone-filter",
+                             options=[{"label": "All", "value": "All"}] + [{"label": h, "value": h} for h in histones],
+                             value="All", clearable=False, style=DROPDOWN_STYLE),
+            ]),
+            html.Div(style={"flex": "1", "minWidth": "150px"}, children=[
+                html.Label("Region", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500", "textTransform": "uppercase", "letterSpacing": "0.5px"}),
+                dcc.Dropdown(id="ratios-region-filter",
+                             options=[{"label": "All", "value": "All"}] + [{"label": r, "value": r} for r in regions],
+                             value="All", clearable=False, style=DROPDOWN_STYLE),
+            ]),
+            html.Div(style={"flex": "1", "minWidth": "150px"}, children=[
+                html.Label("Group Filter", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500", "textTransform": "uppercase", "letterSpacing": "0.5px"}),
+                dcc.Dropdown(id="ratios-group-filter",
+                             options=[{"label": "All", "value": "All"}] + [{"label": g, "value": g} for g in groups],
+                             value="All", clearable=False, style=DROPDOWN_STYLE),
+            ]),
+            html.Div(style={"flex": "1", "minWidth": "200px"}, children=[
+                html.Label(f"Min {data_label} Threshold", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500", "textTransform": "uppercase", "letterSpacing": "0.5px"}),
+                dcc.Slider(id="ratios-min-slider", min=0, max=1, step=0.01, value=0,
+                           marks={0: "0", 0.25: "0.25", 0.5: "0.5", 0.75: "0.75", 1: "1.0"},
+                           tooltip={"placement": "bottom", "always_visible": False}),
+            ]),
+            html.Div(style={"flex": "1", "minWidth": "200px"}, children=[
+                html.Label("Min Variance Percentile", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500", "textTransform": "uppercase", "letterSpacing": "0.5px"}),
+                dcc.Slider(id="ratios-var-slider", min=0, max=100, step=5, value=0,
+                           marks={0: "0%", 25: "25%", 50: "50%", 75: "75%", 100: "100%"},
+                           tooltip={"placement": "bottom", "always_visible": False}),
+            ]),
+        ]),
+
+        # ── Full heatmap ──
         html.Div(style=card_style, children=[
-            html.H3("Full Histone PTM Ratios", style={"color": COLORS["accent"], "marginTop": "0", "fontSize": "16px"}),
-            html.P(f"{df.shape[0]} modifications × {df.shape[1]} samples", style={"color": COLORS["muted"], "fontSize": "12px"}),
+            _section_title(f"Full Histone PTM {data_label}s",
+                           f"{df.shape[0]} modifications × {df.shape[1]} samples"),
             dcc.Graph(figure=heatmap),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "2"}, children=[
-                html.H3("Top 25 Most Variable PTMs", style={"color": COLORS["accent"], "marginTop": "0", "fontSize": "15px"}),
+
+        # ── Variable PTMs + Distribution ──
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "2", "minWidth": "400px"}, children=[
+                _section_title("Top 25 Most Variable PTMs"),
                 dcc.Graph(figure=var_fig),
             ]),
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3(f"Distribution: {top_ptm}", style={"color": COLORS["accent"], "marginTop": "0", "fontSize": "15px"}),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "300px"}, children=[
+                _section_title(f"Distribution: {top_ptm}"),
                 dcc.Graph(figure=box_fig),
                 dcc.Graph(figure=pie_fig),
             ]),
+        ]),
+
+        # ── Editable Data Table ──
+        html.Div(style=card_style, children=[
+            _section_title(f"{data_label} Data Table", "Editable · Sortable · Filterable · Export CSV"),
+            make_editable_table(df, "ratios-table"),
         ]),
     ])
 
@@ -652,7 +1012,9 @@ def build_ratios_tab(d):
 
 def build_single_tab(d):
     if "single_ptms" not in d:
-        return html.Div(style=card_style, children=[html.P("No single PTM data found.")])
+        return html.Div(style=card_style, children=[
+            html.P("No single PTM data found.", style={"color": COLORS["muted"]}),
+        ])
 
     df = d["single_ptms"].copy()
     meta = d["metadata"]
@@ -667,11 +1029,8 @@ def build_single_tab(d):
     # ── Clustered heatmap ──
     row_order = cluster_order(df, axis=0)
     df_clust = df.loc[row_order]
-
     hm_fig = pub_heatmap(df_clust.values, df_clust.columns.tolist(), df_clust.index.tolist(),
                          colorscale="RdBu_r", title="Ratio", height=max(500, len(df) * 11))
-    # Add group annotation bars
-    group_labels = [meta.set_index("Sample").loc[s, "Group"] if s in meta["Sample"].values else "?" for s in df_clust.columns]
 
     # ── Z-score heatmap ──
     zscored = df_clust.apply(lambda row: (row - row.mean()) / (row.std() + 1e-10), axis=1)
@@ -683,24 +1042,27 @@ def build_single_tab(d):
     from sklearn.decomposition import PCA as skPCA
     pca_data = df.T.fillna(0)
     try:
-        pca = skPCA(n_components=2)
+        pca = skPCA(n_components=min(2, pca_data.shape[1]))
         coords = pca.fit_transform(pca_data.values)
-        pca_df = pd.DataFrame({"PC1": coords[:, 0], "PC2": coords[:, 1], "Sample": pca_data.index})
+        pca_df = pd.DataFrame({"PC1": coords[:, 0], "PC2": coords[:, 1] if coords.shape[1] > 1 else 0,
+                                "Sample": pca_data.index})
         pca_df = pca_df.merge(meta, on="Sample")
         pca_fig = px.scatter(pca_df, x="PC1", y="PC2", color="Group", hover_name="Sample",
-                             symbol="Batch" if "Batch" in pca_df.columns else None,
-                             title="PCA — Single PTMs")
-        pca_fig.update_traces(marker=dict(size=10, line=dict(width=1, color="white")))
+                             symbol="Batch" if "Batch" in pca_df.columns and pca_df["Batch"].nunique() > 1 else None,
+                             color_discrete_sequence=GROUP_COLORS)
+        pca_fig.update_traces(marker=dict(size=10, line=dict(width=1.5, color="white")))
         pub_fig(pca_fig, 420)
         pca_fig.update_layout(
             xaxis_title=f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)",
-            yaxis_title=f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)")
+            yaxis_title=f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)" if len(pca.explained_variance_ratio_) > 1 else "PC2",
+        )
     except Exception:
         pca_fig = go.Figure()
         pub_fig(pca_fig, 420)
 
-    # ── Violin / Box per group for selected marks ──
-    key_marks = [m for m in ["H3K9me2", "H3K14ac", "H3K27me3", "H3K4me1", "H4K16ac", "H3K9ac"]
+    # ── Violin for key marks ──
+    key_marks = [m for m in ["H3K9me2", "H3K14ac", "H3K27me3", "H3K4me1", "H4K16ac", "H3K9ac",
+                              "H3K36me1", "H3K27me1", "H4K20me1", "H3K4me3"]
                  if m in df.index][:6]
     if key_marks:
         melt_list = []
@@ -710,7 +1072,8 @@ def build_single_tab(d):
             tmp = tmp.merge(meta, on="Sample")
             melt_list.append(tmp)
         melt_all = pd.concat(melt_list)
-        violin_fig = px.violin(melt_all, x="PTM", y="Ratio", color="Group", box=True, points="all")
+        violin_fig = px.violin(melt_all, x="PTM", y="Ratio", color="Group", box=True, points="all",
+                               color_discrete_sequence=GROUP_COLORS)
         pub_fig(violin_fig, 420)
         violin_fig.update_layout(xaxis_title="", yaxis_title="Ratio")
     else:
@@ -723,39 +1086,45 @@ def build_single_tab(d):
         for grp in groups:
             samples = meta[meta["Group"] == grp]["Sample"].tolist()
             vals = df.loc[ptm, [s for s in samples if s in df.columns]].dropna()
-            bar_data.append({"PTM": ptm, "Group": grp, "Mean": vals.mean(), "SD": vals.std()})
+            if len(vals) > 0:
+                bar_data.append({"PTM": ptm, "Group": grp, "Mean": vals.mean(), "SD": vals.std()})
     bar_df = pd.DataFrame(bar_data)
-    # Top 15 by max mean
     top_ptms = bar_df.groupby("PTM")["Mean"].max().sort_values(ascending=False).head(15).index
     bar_df_top = bar_df[bar_df["PTM"].isin(top_ptms)]
-    bar_fig = px.bar(bar_df_top, x="PTM", y="Mean", color="Group", barmode="group", error_y="SD")
+    bar_fig = px.bar(bar_df_top, x="PTM", y="Mean", color="Group", barmode="group", error_y="SD",
+                     color_discrete_sequence=GROUP_COLORS)
     pub_fig(bar_fig, 420)
     bar_fig.update_layout(xaxis=dict(tickangle=45, tickfont=dict(size=9)), yaxis_title="Mean Ratio")
 
     return html.Div([
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("Clustered Heatmap — Ratios", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "450px"}, children=[
+                _section_title("Clustered Heatmap — Ratios", "Ward linkage hierarchical clustering"),
                 dcc.Graph(figure=hm_fig),
             ]),
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("Z-score Heatmap", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "450px"}, children=[
+                _section_title("Z-score Heatmap", "Row-wise Z-score normalization"),
                 dcc.Graph(figure=zscore_hm),
             ]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("PCA — Sample Clustering", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[
+                _section_title("PCA — Sample Clustering", "Principal Component Analysis on single PTMs"),
                 dcc.Graph(figure=pca_fig),
             ]),
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("Key PTM Distributions", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[
+                _section_title("Key PTM Distributions", "Violin + box plots by group"),
                 dcc.Graph(figure=violin_fig),
             ]),
         ]),
         html.Div(style=card_style, children=[
-            html.H3("Top 15 PTMs — Group Means ± SD", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+            _section_title("Top 15 PTMs — Group Means ± SD"),
             dcc.Graph(figure=bar_fig),
+        ]),
+        # ── Editable DataTable ──
+        html.Div(style=card_style, children=[
+            _section_title("Single PTM Data", "Editable · Sortable · Filterable · Export CSV"),
+            make_editable_table(df, "single-ptm-table"),
         ]),
     ])
 
@@ -768,13 +1137,15 @@ def build_qc_tab(d):
     meta = d.get("metadata", pd.DataFrame())
     df = d.get("single_ptms", d.get("ratios"))
     if df is None:
-        return html.Div(style=card_style, children=[html.P("No data for QC.")])
+        return html.Div(style=card_style, children=[html.P("No data for QC.", style={"color": COLORS["muted"]})])
 
     # ── Missingness heatmap ──
     binary = (~df.isna() & (df != 0)).astype(int)
-    miss_hm = pub_heatmap(binary.values, binary.columns.tolist(), binary.index.tolist(),
-                          colorscale=[[0, "#1a1d26"], [1, COLORS["accent3"]]],
-                          title="Detected", height=max(400, len(binary) * 9))
+    miss_hm = pub_heatmap(
+        binary.values, binary.columns.tolist(), binary.index.tolist(),
+        colorscale=[[0, "#fef2f2"], [1, "#059669"]],
+        title="Detected", height=max(400, len(binary) * 9),
+    )
     miss_hm.update_layout(title=dict(text="Peptide Detection (1=Detected, 0=Missing)", font=dict(size=13)))
 
     # ── Missing count per sample ──
@@ -782,37 +1153,40 @@ def build_qc_tab(d):
     miss_bar_df = pd.DataFrame({"Sample": miss_count.index, "Missing": miss_count.values})
     miss_bar_df = miss_bar_df.merge(meta, on="Sample", how="left")
     miss_bar = px.bar(miss_bar_df, x="Sample", y="Missing", color="Group",
-                      title="Missing Peptides per Sample")
+                      title="Missing Peptides per Sample", color_discrete_sequence=GROUP_COLORS)
     pub_fig(miss_bar, 350)
     miss_bar.update_layout(xaxis=dict(tickangle=45, tickfont=dict(size=8)))
 
-    # ── Peptide completeness histogram ──
+    # ── Peptide completeness ──
     detected_per_ptm = binary.sum(axis=1)
-    comp_hist = px.histogram(x=detected_per_ptm.values, nbins=20,
-                             labels={"x": "# Samples Detected", "y": "# Peptides"},
-                             title="Peptide Completeness")
+    comp_hist = px.histogram(
+        x=detected_per_ptm.values, nbins=20,
+        labels={"x": "# Samples Detected", "y": "# Peptides"},
+        title="Peptide Completeness",
+        color_discrete_sequence=[COLORS["accent"]],
+    )
     pub_fig(comp_hist, 300)
 
-    # ── Area distribution (if available) ──
+    # ── Area distribution ──
     areas = d.get("areas")
     area_box = go.Figure()
     if areas is not None:
-        # Log10 area per sample
         log_areas = np.log10(areas.replace(0, np.nan))
         melt_area = log_areas.stack().reset_index()
         melt_area.columns = ["PTM", "Sample", "Log10Area"]
         melt_area = melt_area.merge(meta, on="Sample", how="left")
         area_box = px.box(melt_area, x="Sample", y="Log10Area", color="Group",
-                          title="Log₁₀(Area) Distribution per Sample")
+                          title="Log\u2081\u2080(Area) Distribution per Sample",
+                          color_discrete_sequence=GROUP_COLORS)
         pub_fig(area_box, 380)
         area_box.update_layout(xaxis=dict(tickangle=45, tickfont=dict(size=7)), showlegend=False)
 
     # ── Low ratio percentage ──
-    low_pct = ((df < 0.01) & (df > 0)).sum(axis=0) / (df > 0).sum(axis=0) * 100
+    low_pct = ((df < 0.01) & (df > 0)).sum(axis=0) / ((df > 0).sum(axis=0) + 1e-10) * 100
     low_df = pd.DataFrame({"Sample": low_pct.index, "LowRatio%": low_pct.values})
     low_df = low_df.merge(meta, on="Sample", how="left")
     low_bar = px.bar(low_df, x="Sample", y="LowRatio%", color="Group",
-                     title="% Peptides with Ratio < 1% (Noise)")
+                     title="% Peptides with Ratio < 1% (Noise)", color_discrete_sequence=GROUP_COLORS)
     pub_fig(low_bar, 300)
     low_bar.update_layout(xaxis=dict(tickangle=45, tickfont=dict(size=7)))
 
@@ -829,49 +1203,44 @@ def build_qc_tab(d):
     total_possible = binary.shape[0] * binary.shape[1]
     completeness = total_detected / total_possible * 100 if total_possible > 0 else 0
 
-    summary_cards = html.Div(style={"display": "flex", "gap": "12px", "marginBottom": "16px", "flexWrap": "wrap"}, children=[
-        _stat_card("Samples", str(n_samples), COLORS["accent"]),
-        _stat_card("PTMs", str(n_ptms), COLORS["accent"]),
-        _stat_card("Completeness", f"{completeness:.1f}%", COLORS["accent3"]),
-        _stat_card("Clean Runs", str(n_clean), COLORS["accent3"]),
-        _stat_card("Warnings", str(n_warn), COLORS["accent2"] if n_warn > 0 else COLORS["accent3"]),
-        _stat_card("Total Warn Lines", str(total_w), COLORS["warn"] if total_w > 0 else COLORS["accent3"]),
-    ])
+    summary_cards = html.Div(
+        style={"display": "flex", "gap": "12px", "marginBottom": "16px", "flexWrap": "wrap"},
+        children=[
+            _stat_card("Samples", str(n_samples), COLORS["accent"]),
+            _stat_card("PTMs", str(n_ptms), COLORS["accent"]),
+            _stat_card("Completeness", f"{completeness:.1f}%", COLORS["accent3"]),
+            _stat_card("Clean Runs", str(n_clean), COLORS["accent3"]),
+            _stat_card("Warnings", str(n_warn), COLORS["accent2"] if n_warn > 0 else COLORS["accent3"]),
+            _stat_card("Total Warn Lines", str(total_w), COLORS["warn"] if total_w > 0 else COLORS["accent3"]),
+        ],
+    )
 
     return html.Div([
         summary_cards,
         html.Div(style=card_style, children=[
-            html.H3("Missingness Heatmap", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+            _section_title("Missingness Heatmap", "Green = detected, Red tint = missing or zero"),
             dcc.Graph(figure=miss_hm),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("Missing Peptides per Sample", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[
+                _section_title("Missing Peptides per Sample"),
                 dcc.Graph(figure=miss_bar),
             ]),
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("Peptide Completeness", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[
+                _section_title("Peptide Completeness"),
                 dcc.Graph(figure=comp_hist),
             ]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("Area Distribution", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[
+                _section_title("Area Distribution"),
                 dcc.Graph(figure=area_box),
             ]),
-            html.Div(style={**card_style, "flex": "1"}, children=[
-                html.H3("Noise Ratio (%)", style={"color": COLORS["accent"], "marginTop": 0, "fontSize": "15px"}),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[
+                _section_title("Noise Ratio"),
                 dcc.Graph(figure=low_bar),
             ]),
         ]),
-    ])
-
-
-def _stat_card(label, value, color):
-    return html.Div(style={**card_style, "flex": "1", "minWidth": "120px", "textAlign": "center",
-                           "padding": "12px"}, children=[
-        html.H2(value, style={"color": color, "margin": "0", "fontSize": "28px"}),
-        html.P(label, style={"color": COLORS["muted"], "margin": "0", "fontSize": "11px"}),
     ])
 
 
@@ -883,8 +1252,9 @@ def build_psm_tab(d):
     psm = d.get("all_psm", pd.DataFrame())
     if psm.empty:
         return html.Div(style=card_style, children=[
-            html.H3("PSM Explorer", style={"color": COLORS["accent"]}),
-            html.P("No identification_list.xls files found in PSM folders.", style={"color": COLORS["muted"]}),
+            _section_title("PSM Explorer"),
+            html.P("No identification_list.xls files found in PSM folders.",
+                   style={"color": COLORS["muted"]}),
         ])
 
     # Standardize columns
@@ -916,14 +1286,14 @@ def build_psm_tab(d):
     n_unique_pep = psm["sequence"].nunique() if "sequence" in psm.columns else 0
     n_samples = psm["_sample_folder"].nunique()
 
-    # ── Mass accuracy histogram ──
+    # ── Mass accuracy ──
     if "ppm" in psm.columns:
         ppm_vals = pd.to_numeric(psm["ppm"], errors="coerce").dropna()
         ppm_fig = px.histogram(ppm_vals, nbins=100, title="Mass Accuracy Distribution",
                                labels={"value": "Mass Error (ppm)", "count": "Count"},
                                color_discrete_sequence=[COLORS["accent"]])
         pub_fig(ppm_fig, 350)
-        ppm_fig.add_vline(x=0, line_dash="dash", line_color=COLORS["accent2"])
+        ppm_fig.add_vline(x=0, line_dash="dash", line_color=COLORS["accent2"], line_width=1)
         ppm_fig.add_vline(x=ppm_vals.median(), line_dash="dot", line_color=COLORS["accent3"],
                           annotation_text=f"Median: {ppm_vals.median():.2f} ppm")
     else:
@@ -941,7 +1311,7 @@ def build_psm_tab(d):
     # ── Modification distribution ──
     if "modification" in psm.columns:
         mod_counts = psm["modification"].value_counts().head(20)
-        mod_bar = px.bar(x=mod_counts.index, y=mod_counts.values, title="Top 20 Modifications Identified",
+        mod_bar = px.bar(x=mod_counts.index, y=mod_counts.values, title="Top 20 Modifications",
                          labels={"x": "Modification", "y": "Count"},
                          color_discrete_sequence=[COLORS["h3"]])
         pub_fig(mod_bar, 350)
@@ -973,7 +1343,7 @@ def build_psm_tab(d):
         rt_fig = go.Figure()
         pub_fig(rt_fig, 320)
 
-    # ── Charge state distribution ──
+    # ── Charge state ──
     if "charge" in psm.columns:
         charge_counts = psm["charge"].value_counts().sort_index()
         charge_fig = px.pie(values=charge_counts.values, names=[f"+{c}" for c in charge_counts.index],
@@ -983,7 +1353,7 @@ def build_psm_tab(d):
         charge_fig = go.Figure()
         pub_fig(charge_fig, 300)
 
-    # ── Scatter: measured vs calculated m/z ──
+    # ── Measured vs calculated m/z ──
     if "measured_mz" in psm.columns and "calculated_mz" in psm.columns:
         scatter_df = psm[["measured_mz", "calculated_mz"]].apply(pd.to_numeric, errors="coerce").dropna()
         if len(scatter_df) > 5000:
@@ -1001,24 +1371,23 @@ def build_psm_tab(d):
         pub_fig(mz_scatter, 350)
 
     return html.Div([
-        # Summary
-        html.Div(style={"display": "flex", "gap": "12px", "marginBottom": "16px"}, children=[
+        html.Div(style={"display": "flex", "gap": "12px", "marginBottom": "16px", "flexWrap": "wrap"}, children=[
             _stat_card("Total PSMs", f"{n_spectra:,}", COLORS["accent"]),
             _stat_card("Unique Peptides", str(n_unique_pep), COLORS["h3"]),
             _stat_card("Samples", str(n_samples), COLORS["accent3"]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=ppm_fig)]),
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=mz_scatter)]),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=ppm_fig)]),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=mz_scatter)]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=psm_bar)]),
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=mod_bar)]),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=psm_bar)]),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=mod_bar)]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=pep_bar)]),
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=rt_fig)]),
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=charge_fig)]),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "300px"}, children=[dcc.Graph(figure=pep_bar)]),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "300px"}, children=[dcc.Graph(figure=rt_fig)]),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "250px"}, children=[dcc.Graph(figure=charge_fig)]),
         ]),
     ])
 
@@ -1030,23 +1399,27 @@ def build_psm_tab(d):
 def build_browser_tab(d):
     folders = d.get("sample_folders", [])
     if not folders:
-        return html.Div(style=card_style, children=[html.P("No sample folders found.")])
+        return html.Div(style=card_style, children=[
+            html.P("No sample folders found.", style={"color": COLORS["muted"]}),
+        ])
 
     return html.Div([
-        html.Div(style={**card_style, "display": "flex", "gap": "16px"}, children=[
-            html.Div(style={"flex": "1"}, children=[
-                html.Label("Sample:", style={"color": COLORS["muted"], "fontSize": "11px"}),
+        html.Div(style={**card_style, "display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={"flex": "1", "minWidth": "200px"}, children=[
+                html.Label("Sample", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500",
+                                             "textTransform": "uppercase", "letterSpacing": "0.5px"}),
                 dcc.Dropdown(id="br-sample", options=[{"label": f, "value": f} for f in folders],
-                             value=folders[0], clearable=False, style={"backgroundColor": COLORS["bg"]}),
+                             value=folders[0], clearable=False, style=DROPDOWN_STYLE),
             ]),
-            html.Div(style={"flex": "1"}, children=[
-                html.Label("PDF:", style={"color": COLORS["muted"], "fontSize": "11px"}),
-                dcc.Dropdown(id="br-pdf", style={"backgroundColor": COLORS["bg"]}),
+            html.Div(style={"flex": "1", "minWidth": "200px"}, children=[
+                html.Label("PDF Chromatogram", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500",
+                                                       "textTransform": "uppercase", "letterSpacing": "0.5px"}),
+                dcc.Dropdown(id="br-pdf", style=DROPDOWN_STYLE),
             ]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "2"}, id="br-pdf-view"),
-            html.Div(style={**card_style, "flex": "1"}, id="br-info"),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "2", "minWidth": "500px"}, id="br-pdf-view"),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "300px"}, id="br-info"),
         ]),
     ])
 
@@ -1075,9 +1448,10 @@ def update_br_pdf_view(folder, pdf_name, exp):
     with open(pdf_path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode()
     return html.Div([
-        html.H3(pdf_name.replace(".pdf", ""), style={"color": COLORS["accent"], "fontSize": "15px", "marginTop": 0}),
+        _section_title(pdf_name.replace(".pdf", ""), "XIC chromatogram from EpiProfile"),
         html.Iframe(src=f"data:application/pdf;base64,{encoded}",
-                    style={"width": "100%", "height": "550px", "border": "none", "borderRadius": "6px"}),
+                    style={"width": "100%", "height": "550px", "border": "none", "borderRadius": "8px",
+                           "backgroundColor": "#f8f9fc"}),
     ])
 
 
@@ -1085,16 +1459,14 @@ def update_br_pdf_view(folder, pdf_name, exp):
           Input("br-sample", "value"), Input("current-exp", "data"))
 def update_br_info(folder, exp):
     if not folder or not exp or exp not in EXP_DATA:
-        return html.P("Select a sample")
+        return html.P("Select a sample", style={"color": COLORS["muted"]})
     d = EXP_DATA[exp]
     sample_name = "_".join(folder.split("_")[1:]) if "_" in folder else folder
 
-    # Find matching sample in ratios/single_ptms
     ref_df = d.get("single_ptms", d.get("ratios"))
     info_items = []
 
     if ref_df is not None:
-        # Try exact and partial match
         matching_col = None
         for col in ref_df.columns:
             if sample_name in col or col in sample_name:
@@ -1103,10 +1475,11 @@ def update_br_info(folder, exp):
         if matching_col:
             vals = ref_df[matching_col].dropna()
             vals = vals[vals != 0]
-            # Show as horizontal bar chart
             if len(vals) > 0:
-                fig = go.Figure(go.Bar(x=vals.values, y=vals.index.tolist(), orientation="h",
-                                       marker=dict(color=vals.values, colorscale="Viridis")))
+                fig = go.Figure(go.Bar(
+                    x=vals.values, y=vals.index.tolist(), orientation="h",
+                    marker=dict(color=vals.values, colorscale="Viridis", line=dict(width=0)),
+                ))
                 pub_fig(fig, max(300, len(vals) * 16))
                 fig.update_layout(yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
                                   margin=dict(l=120, t=10), xaxis_title="Ratio")
@@ -1114,10 +1487,11 @@ def update_br_info(folder, exp):
             else:
                 info_items.append(html.P("No non-zero ratios", style={"color": COLORS["muted"]}))
         else:
-            info_items.append(html.P(f"Sample '{sample_name}' not matched", style={"color": COLORS["accent2"]}))
+            info_items.append(html.P(f"Sample '{sample_name}' not matched in data matrix",
+                                     style={"color": COLORS["muted"], "fontSize": "12px"}))
 
     return html.Div([
-        html.H3("PTM Profile", style={"color": COLORS["accent"], "fontSize": "15px", "marginTop": 0}),
+        _section_title("PTM Profile", f"Sample: {folder}"),
         *info_items,
     ])
 
@@ -1129,39 +1503,38 @@ def update_br_info(folder, exp):
 def build_compare_tab(d):
     meta = d.get("metadata", pd.DataFrame())
     if meta.empty:
-        return html.Div(style=card_style, children=[html.P("No metadata.")])
+        return html.Div(style=card_style, children=[html.P("No metadata.", style={"color": COLORS["muted"]})])
     groups = sorted(meta["Group"].unique())
     df = d.get("single_ptms", d.get("ratios"))
     if df is None:
-        return html.Div(style=card_style, children=[html.P("No ratio data.")])
-
+        return html.Div(style=card_style, children=[html.P("No ratio data.", style={"color": COLORS["muted"]})])
     if len(groups) < 2:
-        return html.Div(style=card_style, children=[html.P("Need at least 2 groups for comparison.")])
+        return html.Div(style=card_style, children=[
+            html.P("Need at least 2 groups for comparison.", style={"color": COLORS["muted"]}),
+        ])
 
-    # Pre-compute all pairwise comparisons
-    epsilon = 1e-6
-    pair_figs = []
-
-    g1, g2 = groups[0], groups[1] if len(groups) > 1 else groups[0]
+    g1, g2 = groups[0], groups[1]
 
     return html.Div([
-        html.Div(style={**card_style, "display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
-            html.Div(style={"flex": "1"}, children=[
-                html.Label("Group A:", style={"color": COLORS["muted"], "fontSize": "11px"}),
+        html.Div(style={**card_style, "display": "flex", "gap": "16px", "flexWrap": "wrap", "alignItems": "flex-end"}, children=[
+            html.Div(style={"flex": "1", "minWidth": "200px"}, children=[
+                html.Label("Group A", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500",
+                                              "textTransform": "uppercase", "letterSpacing": "0.5px"}),
                 dcc.Dropdown(id="cmp-a", options=[{"label": g, "value": g} for g in groups],
-                             value=g1, clearable=False, style={"backgroundColor": COLORS["bg"]}),
+                             value=g1, clearable=False, style=DROPDOWN_STYLE),
             ]),
-            html.Div(style={"flex": "1"}, children=[
-                html.Label("Group B:", style={"color": COLORS["muted"], "fontSize": "11px"}),
+            html.Div(style={"flex": "1", "minWidth": "200px"}, children=[
+                html.Label("Group B", style={"fontSize": "11px", "color": COLORS["muted"], "fontWeight": "500",
+                                              "textTransform": "uppercase", "letterSpacing": "0.5px"}),
                 dcc.Dropdown(id="cmp-b", options=[{"label": g, "value": g} for g in groups],
-                             value=g2, clearable=False, style={"backgroundColor": COLORS["bg"]}),
+                             value=g2, clearable=False, style=DROPDOWN_STYLE),
             ]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, id="cmp-fc"),
-            html.Div(style={**card_style, "flex": "1"}, id="cmp-scatter"),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, id="cmp-fc"),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "400px"}, id="cmp-scatter"),
         ]),
-        html.Div(style={**card_style}, id="cmp-ma"),
+        html.Div(style=card_style, id="cmp-ma"),
     ])
 
 
@@ -1181,8 +1554,8 @@ def update_cmp(ga, gb, exp):
     cb = [c for c in df.columns if c in sb]
 
     if not ca or not cb:
-        empty_msg = html.P("No samples for selection", style={"color": COLORS["muted"]})
-        return empty_msg, empty_msg, empty_msg
+        msg = html.P("No samples for selection", style={"color": COLORS["muted"]})
+        return msg, msg, msg
 
     mean_a = df[ca].mean(axis=1)
     mean_b = df[cb].mean(axis=1)
@@ -1194,16 +1567,18 @@ def update_cmp(ga, gb, exp):
     colors = [COLORS["accent3"] if v > 0.5 else COLORS["accent2"] if v < -0.5 else COLORS["muted"] for v in fc.values]
     fc_fig = go.Figure(go.Bar(x=fc.values, y=fc.index.tolist(), orientation="h", marker_color=colors))
     pub_fig(fc_fig, max(400, len(fc) * 14))
-    fc_fig.update_layout(yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
-                         margin=dict(l=140), xaxis_title=f"log₂(FC) {gb}/{ga}")
+    fc_fig.update_layout(
+        yaxis=dict(autorange="reversed", tickfont=dict(size=9)),
+        margin=dict(l=140), xaxis_title=f"log\u2082(FC) {gb}/{ga}",
+    )
     fc_fig.add_vline(x=0, line_color=COLORS["muted"], line_dash="dash")
 
     # ── Scatter ──
     sc_df = pd.DataFrame({"A": mean_a, "B": mean_b}).dropna()
-    sc_fig = px.scatter(sc_df, x="A", y="B", text=sc_df.index, hover_name=sc_df.index,
+    sc_fig = px.scatter(sc_df, x="A", y="B", hover_name=sc_df.index,
                         labels={"A": f"Mean {ga}", "B": f"Mean {gb}"},
                         color_discrete_sequence=[COLORS["accent"]])
-    sc_fig.update_traces(textposition="top center", textfont=dict(size=7), marker=dict(size=8))
+    sc_fig.update_traces(marker=dict(size=8, line=dict(width=0.5, color="white")))
     pub_fig(sc_fig, 450)
     mx = max(sc_df.max().max(), 0.01)
     sc_fig.add_shape(type="line", x0=0, y0=0, x1=mx, y1=mx,
@@ -1214,19 +1589,17 @@ def update_cmp(ga, gb, exp):
     A_vals = 0.5 * (np.log2(mean_a + epsilon) + np.log2(mean_b + epsilon))
     ma_df = pd.DataFrame({"M": M, "A": A_vals, "PTM": M.index}).dropna()
     ma_df = ma_df[np.isfinite(ma_df["M"]) & np.isfinite(ma_df["A"])]
-    ma_fig = px.scatter(ma_df, x="A", y="M", hover_name="PTM", text="PTM",
+    ma_fig = px.scatter(ma_df, x="A", y="M", hover_name="PTM",
                         title="MA Plot (Ratio vs Intensity)",
-                        labels={"A": "Average Intensity (A)", "M": f"log₂(FC) {gb}/{ga} (M)"},
+                        labels={"A": "Average Intensity (A)", "M": f"log\u2082(FC) {gb}/{ga} (M)"},
                         color_discrete_sequence=[COLORS["accent"]])
-    ma_fig.update_traces(textposition="top center", textfont=dict(size=7), marker=dict(size=7))
+    ma_fig.update_traces(marker=dict(size=7, line=dict(width=0.5, color="white")))
     pub_fig(ma_fig, 400)
     ma_fig.add_hline(y=0, line_color=COLORS["muted"], line_dash="dash")
 
     return (
-        html.Div([html.H3(f"Fold Change: {gb} vs {ga}", style={"color": COLORS["accent"], "fontSize": "15px", "marginTop": 0}),
-                  dcc.Graph(figure=fc_fig)]),
-        html.Div([html.H3("Scatter", style={"color": COLORS["accent"], "fontSize": "15px", "marginTop": 0}),
-                  dcc.Graph(figure=sc_fig)]),
+        html.Div([_section_title(f"Log\u2082 Fold Change: {gb} vs {ga}"), dcc.Graph(figure=fc_fig)]),
+        html.Div([_section_title("Scatter Plot"), dcc.Graph(figure=sc_fig)]),
         html.Div([dcc.Graph(figure=ma_fig)]),
     )
 
@@ -1239,16 +1612,14 @@ def build_corr_tab(d):
     df = d.get("single_ptms", d.get("ratios"))
     meta = d.get("metadata", pd.DataFrame())
     if df is None:
-        return html.Div(style=card_style, children=[html.P("No data.")])
+        return html.Div(style=card_style, children=[html.P("No data.", style={"color": COLORS["muted"]})])
 
     # ── Sample-sample Spearman correlation ──
     corr_matrix = df.corr(method="spearman")
-    # Cluster samples
     col_order = cluster_order(corr_matrix, axis=0)
     corr_matrix = corr_matrix.loc[col_order, col_order]
-
     corr_hm = pub_heatmap(corr_matrix.values, corr_matrix.columns.tolist(), corr_matrix.index.tolist(),
-                          colorscale="RdBu_r", title="Spearman ρ", zmin=-1, zmax=1,
+                          colorscale="RdBu_r", title="Spearman \u03c1", zmin=-1, zmax=1,
                           height=max(500, len(corr_matrix) * 12))
     corr_hm.update_layout(title=dict(text="Sample-Sample Correlation", font=dict(size=14)))
 
@@ -1257,25 +1628,22 @@ def build_corr_tab(d):
     pep_col_order = cluster_order(pep_corr, axis=0) if len(pep_corr) < 100 else list(pep_corr.index)
     pep_corr = pep_corr.loc[pep_col_order, pep_col_order]
     pep_hm = pub_heatmap(pep_corr.values, pep_corr.columns.tolist(), pep_corr.index.tolist(),
-                         colorscale="RdBu_r", title="Spearman ρ", zmin=-1, zmax=1,
+                         colorscale="RdBu_r", title="Spearman \u03c1", zmin=-1, zmax=1,
                          height=max(500, len(pep_corr) * 10))
     pep_hm.update_layout(title=dict(text="Peptide-Peptide Correlation", font=dict(size=14)))
 
-    # ── Dendrogram (text-based via plotly) ──
+    # ── Dendrogram ──
     try:
         data_for_dend = df.T.fillna(0).values
         dist = pdist(data_for_dend, metric="euclidean")
         link = linkage(dist, method="ward")
-        from scipy.cluster.hierarchy import dendrogram as scipy_dend
         dend_result = scipy_dend(link, labels=df.columns.tolist(), no_plot=True)
 
-        # Build plotly dendrogram
         dend_fig = go.Figure()
-        for i, (x_coords, y_coords) in enumerate(zip(dend_result["icoord"], dend_result["dcoord"])):
+        for x_coords, y_coords in zip(dend_result["icoord"], dend_result["dcoord"]):
             dend_fig.add_trace(go.Scatter(x=x_coords, y=y_coords, mode="lines",
                                           line=dict(color=COLORS["accent"], width=1.5),
                                           showlegend=False))
-        # Add sample labels
         tick_positions = [5 + 10 * i for i in range(len(dend_result["ivl"]))]
         dend_fig.update_layout(
             template=PUB_TEMPLATE, height=350,
@@ -1298,21 +1666,34 @@ def build_corr_tab(d):
         hh_df = pd.DataFrame({"H3_mean": h3_mean, "H4_mean": h4_mean, "Sample": h3_mean.index})
         hh_df = hh_df.merge(meta, on="Sample", how="left")
         hh_scatter = px.scatter(hh_df, x="H3_mean", y="H4_mean", color="Group", hover_name="Sample",
-                                title="Avg H3 vs H4 Ratio per Sample")
-        hh_scatter.update_traces(marker=dict(size=10, line=dict(width=1, color="white")))
+                                title="Avg H3 vs H4 Ratio per Sample",
+                                color_discrete_sequence=GROUP_COLORS)
+        hh_scatter.update_traces(marker=dict(size=10, line=dict(width=1.5, color="white")))
         pub_fig(hh_scatter, 380)
     else:
         hh_scatter = go.Figure()
         pub_fig(hh_scatter, 380)
 
     return html.Div([
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=corr_hm)]),
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=pep_hm)]),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "1", "minWidth": "450px"}, children=[
+                _section_title("Sample Correlation"),
+                dcc.Graph(figure=corr_hm),
+            ]),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "450px"}, children=[
+                _section_title("Peptide Correlation"),
+                dcc.Graph(figure=pep_hm),
+            ]),
         ]),
-        html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(style={**card_style, "flex": "2"}, children=[dcc.Graph(figure=dend_fig)]),
-            html.Div(style={**card_style, "flex": "1"}, children=[dcc.Graph(figure=hh_scatter)]),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={**card_style, "flex": "2", "minWidth": "500px"}, children=[
+                _section_title("Hierarchical Clustering Dendrogram"),
+                dcc.Graph(figure=dend_fig),
+            ]),
+            html.Div(style={**card_style, "flex": "1", "minWidth": "350px"}, children=[
+                _section_title("H3 vs H4 Mean Ratio"),
+                dcc.Graph(figure=hh_scatter),
+            ]),
         ]),
     ])
 
@@ -1325,7 +1706,10 @@ if __name__ == "__main__":
     port = args.port
     host = args.host
     print("\n" + "=" * 60)
-    print("  EpiProfile-Plants Dashboard v2.0")
-    print(f"  http://localhost:{port}")
+    print("  EpiProfile-Plants Dashboard v3.0")
+    print(f"  Experiments loaded: {len(EXP_DATA)}")
+    for name in EXP_DATA:
+        print(f"    \u2022 {name}")
+    print(f"\n  \u279c  http://localhost:{port}")
     print("=" * 60 + "\n")
     app.run(debug=False, port=port, host=host)

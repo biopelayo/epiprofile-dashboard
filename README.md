@@ -10,13 +10,22 @@ Interactive visualization dashboard for **EpiProfile-Plants** histone PTM quanti
 
 | Tab | Description |
 |-----|-------------|
-| **Histone Ratios** | Full PTM ratio heatmap, top variable PTMs, group distributions |
-| **Single PTMs** | Clustered heatmap, Z-score normalization, PCA, violin plots, grouped bars |
-| **QC Dashboard** | Missingness heatmap, peptide completeness, area distributions, noise analysis |
+| **Histone Ratios** | Full PTM ratio heatmap with advanced filtering (histone type, region, group, threshold, variance), top variable PTMs, group distributions, editable DataTable |
+| **Single PTMs** | Clustered heatmap, Z-score normalization, PCA, violin plots, grouped bars, editable DataTable |
+| **QC Dashboard** | Missingness heatmap, peptide completeness, area distributions, noise analysis, summary stat cards |
 | **PSM Explorer** | Mass accuracy (ppm), measured vs calculated m/z, modifications, charge states, RT |
 | **Sample Browser** | PDF chromatogram viewer, per-sample PTM profile bar charts |
 | **Comparisons** | Log2 fold change, scatter plots, MA plots between groups |
 | **Correlations** | Spearman sample/peptide correlation heatmaps, hierarchical dendrogram, H3 vs H4 |
+
+### v3.0 Highlights
+
+- **Clean white professional theme** with publication-quality styling
+- **4 experiment support** out of the box (PXD046788, PXD014739, PXD046034, Ontogeny)
+- **Advanced filtering controls** — filter by histone type, region, group, min threshold, variance percentile
+- **Editable DataTables** — sort, filter, edit cells, delete rows/columns, export CSV on the fly
+- **Recursive file finder** — auto-discovers data files in nested directory structures
+- **Experiment description bar** — auto-generated summary of loaded data
 
 ### Supported EpiProfile Output
 
@@ -61,11 +70,13 @@ Then open **http://localhost:8050** in your browser.
 
 This dashboard provides interactive visualization of EpiProfile output that goes beyond the static MATLAB PDFs, enabling:
 
-- Multi-experiment comparison with a dropdown selector
+- Multi-experiment comparison with dropdown selector
 - Clustered heatmaps with hierarchical ordering
 - PCA for sample quality assessment
 - PSM-level mass accuracy quality control
 - Publication-ready plots with consistent styling
+- On-the-fly data editing and CSV export
+- Advanced PTM filtering with multiple criteria
 
 ## Directory Structure
 
