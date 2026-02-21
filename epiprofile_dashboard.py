@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.7 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.8 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -165,7 +165,7 @@ ALT_RATIOS = {
     },
 }
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.7")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.8")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -843,55 +843,111 @@ tss = {**ts,"color":C["accent_d"],"borderBottom":f"3px solid {C['accent']}","fon
 # ======================================================================
 
 app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","fontFamily":FONT,"color":C["text"]}, children=[
-    # ---- HERO HEADER (big, green gradient) ----
-    html.Div(style={"background":"linear-gradient(135deg, #166534 0%, #15803d 40%, #22c55e 100%)",
-                     "padding":"28px 40px 20px","color":"white","position":"relative","overflow":"hidden"}, children=[
-        # Decorative circles
-        html.Div(style={"position":"absolute","top":"-30px","right":"-30px","width":"160px","height":"160px",
-                         "borderRadius":"50%","background":"rgba(255,255,255,0.08)"}),
-        html.Div(style={"position":"absolute","bottom":"-20px","left":"10%","width":"100px","height":"100px",
-                         "borderRadius":"50%","background":"rgba(255,255,255,0.05)"}),
-        # Top row: logo + title + experiment selector
-        html.Div(style={"display":"flex","alignItems":"center","gap":"20px","flexWrap":"wrap","position":"relative","zIndex":"1"}, children=[
-            html.Img(src=LOGO, style={"height":"56px","width":"56px","borderRadius":"14px",
-                                       "boxShadow":"0 4px 12px rgba(0,0,0,0.2)"}),
+    # ---- HERO HEADER (refined, green gradient with glass effect) ----
+    html.Div(style={"background":"linear-gradient(135deg, #0f4c28 0%, #166534 25%, #15803d 55%, #22c55e 100%)",
+                     "padding":"0","color":"white","position":"relative","overflow":"hidden"}, children=[
+        # Decorative elements
+        html.Div(style={"position":"absolute","top":"-40px","right":"-40px","width":"200px","height":"200px",
+                         "borderRadius":"50%","background":"rgba(255,255,255,0.06)"}),
+        html.Div(style={"position":"absolute","top":"20px","right":"80px","width":"80px","height":"80px",
+                         "borderRadius":"50%","background":"rgba(255,255,255,0.04)"}),
+        html.Div(style={"position":"absolute","bottom":"-30px","left":"5%","width":"120px","height":"120px",
+                         "borderRadius":"50%","background":"rgba(255,255,255,0.04)"}),
+        html.Div(style={"position":"absolute","bottom":"10px","right":"30%","width":"60px","height":"60px",
+                         "borderRadius":"50%","background":"rgba(255,255,255,0.03)"}),
+        # Top row: logo + title + badges + selectors
+        html.Div(style={"display":"flex","alignItems":"center","gap":"24px","flexWrap":"wrap",
+                         "position":"relative","zIndex":"1","padding":"28px 40px 10px"}, children=[
+            # Logo with glow effect
+            html.Div(style={"position":"relative"}, children=[
+                html.Div(style={"position":"absolute","inset":"-4px","borderRadius":"18px",
+                                 "background":"rgba(74,222,128,0.3)","filter":"blur(8px)"}),
+                html.Img(src=LOGO, style={"height":"60px","width":"60px","borderRadius":"16px",
+                                           "boxShadow":"0 6px 20px rgba(0,0,0,0.3)","position":"relative"}),
+            ]),
             html.Div([
-                html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"32px","fontWeight":"800",
-                         "letterSpacing":"-0.5px","color":"white","lineHeight":"1.1"}),
-                html.Div(style={"display":"flex","gap":"10px","alignItems":"center","marginTop":"4px"}, children=[
-                    html.Span("PTM Dashboard v3.7", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
-                    html.Span("|", style={"color":"rgba(255,255,255,0.4)"}),
-                    html.Span("hPTM", style={"background":"rgba(255,255,255,0.15)","padding":"2px 8px",
-                              "borderRadius":"4px","fontSize":"12px","fontWeight":"600"}),
-                    html.Span("hPF", style={"background":"rgba(255,255,255,0.15)","padding":"2px 8px",
-                              "borderRadius":"4px","fontSize":"12px","fontWeight":"600"}),
-                    html.Span("hDP", style={"background":"rgba(255,255,255,0.15)","padding":"2px 8px",
-                              "borderRadius":"4px","fontSize":"12px","fontWeight":"600"}),
+                html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"34px","fontWeight":"800",
+                         "letterSpacing":"-0.5px","color":"white","lineHeight":"1.1",
+                         "textShadow":"0 2px 8px rgba(0,0,0,0.15)"}),
+                html.Div(style={"display":"flex","gap":"8px","alignItems":"center","marginTop":"6px"}, children=[
+                    html.Span("Histone PTM Dashboard", style={"color":"#bbf7d0","fontSize":"13px","fontWeight":"500"}),
+                    html.Span("v3.8", style={"background":"rgba(74,222,128,0.25)","padding":"2px 10px",
+                              "borderRadius":"12px","fontSize":"12px","fontWeight":"700","color":"#4ade80",
+                              "border":"1px solid rgba(74,222,128,0.3)"}),
+                    html.Span("|", style={"color":"rgba(255,255,255,0.3)","margin":"0 2px"}),
+                    html.Span("hPTM", style={"background":"rgba(255,255,255,0.12)","padding":"3px 10px",
+                              "borderRadius":"6px","fontSize":"11px","fontWeight":"600","backdropFilter":"blur(4px)",
+                              "border":"1px solid rgba(255,255,255,0.1)"}),
+                    html.Span("hPF", style={"background":"rgba(255,255,255,0.12)","padding":"3px 10px",
+                              "borderRadius":"6px","fontSize":"11px","fontWeight":"600","backdropFilter":"blur(4px)",
+                              "border":"1px solid rgba(255,255,255,0.1)"}),
+                    html.Span("hDP", style={"background":"rgba(255,255,255,0.12)","padding":"3px 10px",
+                              "borderRadius":"6px","fontSize":"11px","fontWeight":"600","backdropFilter":"blur(4px)",
+                              "border":"1px solid rgba(255,255,255,0.1)"}),
+                    html.Span("Areas", style={"background":"rgba(255,255,255,0.12)","padding":"3px 10px",
+                              "borderRadius":"6px","fontSize":"11px","fontWeight":"600","backdropFilter":"blur(4px)",
+                              "border":"1px solid rgba(255,255,255,0.1)"}),
                 ]),
             ]),
             html.Div(style={"flex":"1"}),
-            # Experiment selector
-            html.Div(style={"display":"flex","flexDirection":"column","gap":"4px"}, children=[
-                html.Span("EXPERIMENT",style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"700",
-                           "letterSpacing":"1.5px","textTransform":"uppercase"}),
+            # Experiment selector - glass card
+            html.Div(style={"background":"rgba(255,255,255,0.08)","borderRadius":"14px","padding":"12px 16px",
+                             "border":"1px solid rgba(255,255,255,0.12)","backdropFilter":"blur(8px)"}, children=[
+                html.Span("EXPERIMENT",style={"color":"#bbf7d0","fontSize":"10px","fontWeight":"700",
+                           "letterSpacing":"1.5px","textTransform":"uppercase","display":"block","marginBottom":"6px"}),
                 dcc.Dropdown(id="exp-sel", options=[{"label":k,"value":k} for k in EXP_DATA],
                              value=DEFAULT_EXP, clearable=False,
-                             style={"width":"400px","fontSize":"14px","borderRadius":"10px"}),
+                             style={"width":"380px","fontSize":"13px","borderRadius":"10px"}),
             ]),
-            # Color palette selector
-            html.Div(style={"display":"flex","flexDirection":"column","gap":"4px"}, children=[
-                html.Span("COLOR PALETTE",style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"700",
-                           "letterSpacing":"1.5px","textTransform":"uppercase"}),
+            # Color palette selector - glass card
+            html.Div(style={"background":"rgba(255,255,255,0.08)","borderRadius":"14px","padding":"12px 16px",
+                             "border":"1px solid rgba(255,255,255,0.12)","backdropFilter":"blur(8px)"}, children=[
+                html.Span("COLOR PALETTE",style={"color":"#bbf7d0","fontSize":"10px","fontWeight":"700",
+                           "letterSpacing":"1.5px","textTransform":"uppercase","display":"block","marginBottom":"6px"}),
                 dcc.Dropdown(id="palette-sel",
                              options=[{"label":k,"value":k} for k in PALETTES],
                              value="EpiProfile (default)", clearable=False,
-                             style={"width":"220px","fontSize":"14px","borderRadius":"10px"}),
+                             style={"width":"210px","fontSize":"13px","borderRadius":"10px"}),
             ]),
+        ]),
+        # Stats ribbon
+        html.Div(style={"display":"flex","gap":"20px","alignItems":"center","justifyContent":"center",
+                         "padding":"8px 40px 12px","position":"relative","zIndex":"1","flexWrap":"wrap"}, children=[
+            html.Span(f"{len(EXP_DATA)} Experiments", style={"color":"rgba(255,255,255,0.7)","fontSize":"12px","fontWeight":"500"}),
+            html.Span("|", style={"color":"rgba(255,255,255,0.2)"}),
+            html.Span("12 Analysis Tabs", style={"color":"rgba(255,255,255,0.7)","fontSize":"12px","fontWeight":"500"}),
+            html.Span("|", style={"color":"rgba(255,255,255,0.2)"}),
+            html.Span("Kruskal-Wallis + Mann-Whitney", style={"color":"rgba(255,255,255,0.7)","fontSize":"12px","fontWeight":"500"}),
+            html.Span("|", style={"color":"rgba(255,255,255,0.2)"}),
+            html.Span("PCA + Biclustering", style={"color":"rgba(255,255,255,0.7)","fontSize":"12px","fontWeight":"500"}),
+            html.Span("|", style={"color":"rgba(255,255,255,0.2)"}),
+            html.Span("R Export", style={"color":"rgba(255,255,255,0.7)","fontSize":"12px","fontWeight":"500"}),
         ]),
         # Upload area (collapsible, 3-slot)
         html.Details(style={"marginTop":"16px","position":"relative","zIndex":"1"}, children=[
-            html.Summary("Upload phenodata / histone_ratios / single_PTMs files",
-                         style={"cursor":"pointer","color":"#bbf7d0","fontSize":"13px","fontWeight":"500"}),
+            html.Summary("Upload / Replace Data Files",
+                         style={"cursor":"pointer","color":"#bbf7d0","fontSize":"14px","fontWeight":"600",
+                                "letterSpacing":"0.5px"}),
+            # Mode selector
+            html.Div(style={"display":"flex","gap":"16px","marginTop":"12px","alignItems":"center","flexWrap":"wrap"}, children=[
+                html.Div(style={"display":"flex","gap":"8px","alignItems":"center"}, children=[
+                    html.Span("MODE:", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"700","letterSpacing":"1px"}),
+                    dcc.RadioItems(id="upload-mode",
+                        options=[{"label":" Replace files in current experiment","value":"replace"},
+                                 {"label":" Upload new experiment","value":"new"}],
+                        value="replace", inline=True,
+                        style={"color":"rgba(255,255,255,0.85)","fontSize":"13px"},
+                        inputStyle={"marginRight":"4px","marginLeft":"12px"}),
+                ]),
+                # New experiment name (shown only for "new" mode)
+                html.Div(id="new-exp-name-wrap", style={"display":"none"}, children=[
+                    html.Span("NAME:", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"700","letterSpacing":"1px","marginRight":"8px"}),
+                    dcc.Input(id="new-exp-name", type="text", placeholder="My Experiment (species)",
+                              style={"borderRadius":"8px","border":"1px solid rgba(255,255,255,0.3)",
+                                     "padding":"6px 12px","fontSize":"13px","backgroundColor":"rgba(0,0,0,0.15)",
+                                     "color":"white","width":"280px"}),
+                ]),
+            ]),
             html.Div(style={"display":"flex","gap":"16px","marginTop":"12px","flexWrap":"wrap"}, children=[
                 html.Div(style={"flex":"1","minWidth":"250px"}, children=[
                     html.Label("1. Phenodata TSV", style={"color":"#bbf7d0","fontSize":"11px","fontWeight":"600"}),
@@ -924,10 +980,13 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
             html.Div(id="upload-status", style={"color":"#4ade80","fontSize":"12px","marginTop":"8px"}),
         ]),
     ]),
-    # ---- Description bar ----
-    html.Div(id="desc-bar", style={"backgroundColor":"#dcfce7","padding":"8px 40px",
-                                     "fontSize":"13px","color":"#166534","fontWeight":"500",
-                                     "borderBottom":"1px solid #bbf7d0"}),
+    # ---- Description bar with experiment stats ----
+    html.Div(style={"backgroundColor":"#dcfce7","padding":"10px 40px",
+                     "borderBottom":"1px solid #bbf7d0","display":"flex",
+                     "justifyContent":"space-between","alignItems":"center","flexWrap":"wrap","gap":"8px"}, children=[
+        html.Div(id="desc-bar", style={"fontSize":"13px","color":"#166534","fontWeight":"500"}),
+        html.Div(id="exp-stats-bar", style={"display":"flex","gap":"12px","alignItems":"center"}),
+    ]),
     # ---- Tabs ----
     dcc.Tabs(id="tabs", value="tab-hpf", style={"backgroundColor":"#fff","borderBottom":"2px solid #d1d5db"},
              colors={"border":"transparent","primary":C["accent"],"background":"#fff"}, children=[
@@ -948,12 +1007,23 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
     # ---- Download component (hidden, triggered by export callbacks) ----
     dcc.Download(id="download-data"),
     # ---- Footer ----
-    html.Div(style={"textAlign":"center","padding":"24px","color":"#166534","fontSize":"13px",
+    html.Div(style={"textAlign":"center","padding":"20px 40px","color":"#166534","fontSize":"12px",
                      "background":"linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%)",
                      "borderTop":"2px solid #bbf7d0","marginTop":"40px"}, children=[
-        html.Span("EpiProfile-Plants v3.7 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
-        html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
-               style={"color":"#15803d","textDecoration":"none","fontWeight":"700"}, target="_blank"),
+        html.Div(style={"display":"flex","justifyContent":"center","alignItems":"center","gap":"8px",
+                         "flexWrap":"wrap","marginBottom":"4px"}, children=[
+            html.Span("EpiProfile-Plants v3.8", style={"fontWeight":"700","fontSize":"13px","color":"#15803d"}),
+            html.Span("|", style={"color":"#bbf7d0"}),
+            html.Span("Histone PTM Quantification Dashboard", style={"fontWeight":"500"}),
+            html.Span("|", style={"color":"#bbf7d0"}),
+            html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
+                   style={"color":"#15803d","textDecoration":"none","fontWeight":"700",
+                          "background":"#dcfce7","padding":"2px 10px","borderRadius":"8px",
+                          "border":"1px solid #bbf7d0"}, target="_blank"),
+        ]),
+        html.P("Publication-quality visualization for EpiProfile-Plants output | "
+               "Kruskal-Wallis + Mann-Whitney + FDR | PCA + Biclustering | Export to R",
+               style={"margin":"4px 0 0","color":"#94a3b8","fontSize":"11px"}),
     ]),
     dcc.Store(id="cur-exp", data=DEFAULT_EXP),
     dcc.Store(id="cur-palette", data="EpiProfile (default)"),
@@ -981,15 +1051,61 @@ def _desc_bar(e, pal):
     pal_name = pal if pal else "EpiProfile (default)"
     return f"{desc}  |  Palette: {pal_name}"
 
+@callback(Output("new-exp-name-wrap","style"),
+          Input("upload-mode","value"), prevent_initial_call=True)
+def _upload_mode_toggle(mode):
+    if mode == "new":
+        return {"display":"flex","alignItems":"center"}
+    return {"display":"none"}
+
+@callback(Output("exp-stats-bar","children"),
+          Input("cur-exp","data"))
+def _exp_stats(exp):
+    if not exp or exp not in EXP_DATA: return ""
+    d = EXP_DATA[exp]; meta = d.get("metadata", pd.DataFrame())
+    n_samp = len(meta) if not meta.empty else 0
+    n_grp = meta["Group"].nunique() if not meta.empty else 0
+    n_hptm = len(d.get("hptm", pd.DataFrame()))
+    n_hpf = len(d.get("hpf", pd.DataFrame()))
+    has_areas = "areas_norm" in d and d["areas_norm"] is not None
+    badge = lambda txt, bg: html.Span(txt, style={"background":bg,"color":"white","padding":"2px 10px",
+        "borderRadius":"10px","fontSize":"11px","fontWeight":"600"})
+    chips = [
+        badge(f"{n_samp} samples", "#166534"),
+        badge(f"{n_grp} groups", "#15803d"),
+        badge(f"{n_hptm} hPTMs", "#0891b2"),
+    ]
+    if n_hpf > 0: chips.append(badge(f"{n_hpf} hPF", "#7c3aed"))
+    if has_areas: chips.append(badge("Areas + QN", "#d97706"))
+    return chips
+
 @callback(Output("upload-status","children"),
+          Output("exp-sel","options"),
+          Output("exp-sel","value"),
           Input("upload-pheno","contents"), Input("upload-ratios","contents"),
           Input("upload-singleptm","contents"),
           State("upload-pheno","filename"), State("upload-ratios","filename"),
           State("upload-singleptm","filename"),
+          State("upload-mode","value"), State("new-exp-name","value"),
           State("cur-exp","data"), prevent_initial_call=True)
-def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name, sptm_name, exp):
+def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name, sptm_name,
+            mode, new_name, exp):
+    cur_opts = [{"label":k,"value":k} for k in EXP_DATA]
+    cur_val = exp
+
+    # Handle "new experiment" mode
+    if mode == "new":
+        exp_name = (new_name or "").strip()
+        if not exp_name:
+            exp_name = f"Uploaded_{datetime.now().strftime('%H%M%S')}"
+        if exp_name not in EXP_DATA:
+            EXP_DATA[exp_name] = {"description": f"Uploaded: {exp_name}", "layouts_dir": ""}
+        exp = exp_name
+        cur_opts = [{"label":k,"value":k} for k in EXP_DATA]
+        cur_val = exp_name
+
     if not exp or exp not in EXP_DATA:
-        return html.Div("No experiment selected.", style={"color":"#fca5a5"})
+        return html.Div("No experiment selected.", style={"color":"#fca5a5"}), cur_opts, cur_val
     d = EXP_DATA[exp]
     results = []
 
@@ -1060,7 +1176,20 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
             results.append(html.Span(f"Single PTMs ERROR: {e}. ", style={"color":"#fca5a5"}))
             log_upload(exp, sptm_name or "?", "single_ptms", 0, 0, "error", str(e))
 
-    return html.Div(results) if results else ""
+    # For new experiments, also normalize areas if uploaded
+    if mode == "new" and ratios_content:
+        d = EXP_DATA[exp]
+        if d.get("areas") is not None:
+            log2_a, qn_a = normalize_areas(d["areas"])
+            if log2_a is not None: d["areas_log2"] = log2_a
+            if qn_a is not None: d["areas_norm"] = qn_a
+            results.append(html.Span(" Areas normalized (log2+QN). ", style={"color":"#4ade80"}))
+
+    if mode == "new" and results:
+        results.insert(0, html.Span(f"NEW EXPERIMENT '{exp}' created! ",
+                       style={"color":"#fbbf24","fontWeight":"700","fontSize":"14px"}))
+
+    return (html.Div(results) if results else "", cur_opts, cur_val)
 
 @callback(Output("tab-out","children"), Input("tabs","value"), Input("cur-exp","data"), Input("cur-palette","data"))
 def _rt(tab, exp, pal):
@@ -1083,12 +1212,15 @@ def _rt(tab, exp, pal):
 # HELPERS
 # ======================================================================
 
-def adaptive_font(n_items, base=14, min_size=8, max_size=18):
+def adaptive_font(n_items, base=14, min_size=7, max_size=18):
     """Compute font size based on number of items to display."""
-    if n_items <= 15: return max_size
-    if n_items <= 30: return base
-    if n_items <= 60: return max(min_size + 2, base - 2)
-    if n_items <= 100: return max(min_size + 1, base - 3)
+    if n_items is None or n_items <= 0: return base
+    if n_items <= 10: return max_size
+    if n_items <= 20: return max(base, 15)
+    if n_items <= 35: return base
+    if n_items <= 50: return max(min_size + 3, base - 2)
+    if n_items <= 80: return max(min_size + 2, base - 3)
+    if n_items <= 120: return max(min_size + 1, base - 4)
     return min_size
 
 def adaptive_margin_l(labels, base=80, per_char=6.5, min_m=60, max_m=300):
@@ -1132,11 +1264,16 @@ def pfig(fig, h=500, n_x=None, n_y=None, n_groups=None):
         fig.update_layout(legend=adaptive_legend(n_groups))
     return fig
 
-def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600, meta=None):
-    """Publication heatmap with adaptive font sizes. If meta is provided, adds a group color bar."""
-    xsz = adaptive_font(len(x))
-    ysz = adaptive_font(len(y))
+def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=None, meta=None):
+    """Publication heatmap with adaptive font sizes. If meta is provided, adds a group color bar.
+    Height auto-scales to number of features (rows) if h is None."""
+    n_y = len(y); n_x = len(x)
+    if h is None:
+        h = max(350, min(2000, n_y * 16 + 150))
+    xsz = adaptive_font(n_x)
+    ysz = adaptive_font(n_y)
     ml = adaptive_margin_l(y)
+    mb = max(100, min(200, n_x * 4 + 60))  # adaptive bottom margin for rotated x labels
     if meta is not None and not meta.empty:
         sample_groups = {}
         for _, row in meta.iterrows():
@@ -1155,7 +1292,7 @@ def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600, meta=None)
         fig.add_trace(go.Heatmap(z=z,x=x,y=y,colorscale=cs,
             colorbar=dict(thickness=14,len=0.85,title=dict(text=title,side="right",font=dict(size=13)),tickfont=dict(size=12)),
             hoverongaps=False, zmin=zmin, zmax=zmax), row=2, col=1)
-        fig.update_layout(template=PUB,height=h,margin=dict(l=ml,b=130,t=35,r=40))
+        fig.update_layout(template=PUB,height=h,margin=dict(l=ml,b=mb,t=35,r=40))
         fig.update_xaxes(tickangle=45,tickfont=dict(size=xsz), row=2, col=1)
         fig.update_yaxes(tickfont=dict(size=ysz),autorange="reversed", row=2, col=1)
         fig.update_yaxes(tickfont=dict(size=13), row=1, col=1)
@@ -1165,7 +1302,7 @@ def phm(z, x, y, cs="Viridis", title="", zmin=None, zmax=None, h=600, meta=None)
             colorbar=dict(thickness=14,len=0.9,title=dict(text=title,side="right",font=dict(size=13)),tickfont=dict(size=12)),
             hoverongaps=False, zmin=zmin, zmax=zmax))
         fig.update_layout(template=PUB,height=h,xaxis=dict(tickangle=45,tickfont=dict(size=xsz)),
-                          yaxis=dict(tickfont=dict(size=ysz),autorange="reversed"),margin=dict(l=ml,b=130,t=35,r=40))
+                          yaxis=dict(tickfont=dict(size=ysz),autorange="reversed"),margin=dict(l=ml,b=mb,t=35,r=40))
         return fig
 
 def cluster_order(df, axis=0):
@@ -1722,19 +1859,45 @@ def _pca_content(source, exp, pal):
             if cols_g: group_means[g] = df[cols_g].mean(axis=1)
         group_means["Cluster"] = km.labels_
         cluster_means = group_means.groupby("Cluster")[groups_list].mean()
-        km_hm = phm(cluster_means.values,[f"Cluster {i}" for i in cluster_means.index],
-                     groups_list,cs="Greens",title=f"Feature Clusters (K={k_vals}) x Group Means",h=max(250,k_vals*50))
+        km_hm = phm(cluster_means.values, groups_list,
+                     [f"Cluster {i}" for i in cluster_means.index],
+                     cs="Greens",title=f"Feature Clusters (K={k_vals}) x Group Means",h=max(250,k_vals*50))
     except: km_hm = go.Figure(); pfig(km_hm, 300)
 
     try:
-        Z = df.fillna(0).values; n_bic = min(4,n_feats,X.shape[0])
-        if n_bic>=2 and Z.shape[0]>=4 and Z.shape[1]>=4:
-            bic = SpectralBiclustering(n_clusters=n_bic,random_state=42); bic.fit(Z)
-            ro = np.argsort(bic.row_labels_); co = np.argsort(bic.column_labels_)
-            bic_hm = phm(Z[ro][:,co],[df.index[i] for i in ro],[df.columns[i] for i in co],
-                         cs="YlGnBu",title=f"Biclustering (n={n_bic})",h=max(500,n_feats*12))
-        else: bic_hm = go.Figure(); pfig(bic_hm, 300)
-    except: bic_hm = go.Figure(); pfig(bic_hm, 300)
+        Z = df.fillna(0).values
+        n_r, n_c = Z.shape
+        n_bic = min(4, n_r, n_c)
+        if n_bic >= 2 and n_r >= 4 and n_c >= 4:
+            bic = SpectralBiclustering(n_clusters=n_bic, random_state=42, method="log")
+            bic.fit(Z + np.abs(Z.min()) + 1e-6)  # shift to positive for log method
+            ro = np.argsort(bic.row_labels_)
+            co = np.argsort(bic.column_labels_)
+            bic_z = Z[ro][:, co]
+            bic_x = [df.columns[i] for i in co]   # samples (columns)
+            bic_y = [df.index[i] for i in ro]      # features (rows)
+            bic_hm = phm(bic_z, bic_x, bic_y, cs="YlGnBu",
+                         title=f"Biclustering (n={n_bic})",
+                         h=max(500, len(bic_y)*14), meta=meta)
+            # Add cluster boundary lines
+            row_labels_sorted = bic.row_labels_[ro]
+            col_labels_sorted = bic.column_labels_[co]
+            for i in range(1, len(row_labels_sorted)):
+                if row_labels_sorted[i] != row_labels_sorted[i-1]:
+                    bic_hm.add_hline(y=i-0.5, line_dash="dot", line_color="white", line_width=2)
+            for i in range(1, len(col_labels_sorted)):
+                if col_labels_sorted[i] != col_labels_sorted[i-1]:
+                    bic_hm.add_vline(x=i-0.5, line_dash="dot", line_color="white", line_width=2)
+        else:
+            bic_hm = go.Figure()
+            bic_hm.add_annotation(text=f"Need >= 4 features and 4 samples (have {n_r}x{n_c})",
+                                  xref="paper",yref="paper",x=0.5,y=0.5,showarrow=False,font=dict(size=14,color=C["muted"]))
+            pfig(bic_hm, 300)
+    except Exception as bic_err:
+        bic_hm = go.Figure()
+        bic_hm.add_annotation(text=f"Biclustering error: {str(bic_err)[:80]}",
+                              xref="paper",yref="paper",x=0.5,y=0.5,showarrow=False,font=dict(size=13,color=C["red"]))
+        pfig(bic_hm, 300)
 
     children = [
         html.P(f"Data source: {src_label} | {df.shape[0]} features x {df.shape[1]} samples",
@@ -2048,48 +2211,156 @@ def tab_upset(d):
     hpf_meta = d.get("hpf_meta", pd.DataFrame())
     hpf = d.get("hpf", pd.DataFrame())
     meta = d.get("metadata", pd.DataFrame())
+    hptm = d.get("hptm")
 
     if hpf_meta.empty or hpf.empty:
         return html.Div(style=CS, children=[html.P("No peptidoform data for UpSet analysis.")])
 
     groups = sorted(meta["Group"].unique())
+    children = []
 
-    # ---- UpSet: which PTMs co-occur on the same peptide? ----
-    # For each combinatorial hPF, extract the individual PTMs
+    # ============================================
+    # SECTION 1: PTM Co-occurrence from combinatorial hPF
+    # ============================================
     combos = hpf_meta[hpf_meta["is_combo"]].copy()
 
-    if combos.empty:
-        return html.Div(style=CS, children=[html.P("No combinatorial peptidoforms found.")])
+    if not combos.empty:
+        pair_counts = {}
+        for _, row in combos.iterrows():
+            ptms = row["individual_ptms"]
+            if len(ptms) >= 2:
+                for p1, p2 in combinations(sorted(ptms), 2):
+                    key = f"{p1} + {p2}"
+                    pair_counts[key] = pair_counts.get(key, 0) + 1
 
-    # Count co-occurrence pairs
-    pair_counts = {}
-    for _, row in combos.iterrows():
-        ptms = row["individual_ptms"]
-        if len(ptms) >= 2:
-            for p1, p2 in combinations(sorted(ptms), 2):
-                key = f"{p1} + {p2}"
-                pair_counts[key] = pair_counts.get(key, 0) + 1
+        if pair_counts:
+            sorted_pairs = sorted(pair_counts.items(), key=lambda x: -x[1])[:30]
+            pair_names = [p[0] for p in sorted_pairs]
+            pair_vals = [p[1] for p in sorted_pairs]
+            n_pairs = len(pair_names)
 
-    if not pair_counts:
-        return html.Div(style=CS, children=[html.P("No PTM co-occurrences found.")])
+            uf = go.Figure(go.Bar(x=pair_vals, y=pair_names, orientation="h",
+                                   marker=dict(color=pair_vals,colorscale="Viridis",line=dict(width=0))))
+            pfig(uf, max(350, n_pairs*22), n_y=n_pairs)
+            uf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=adaptive_font(n_pairs))),
+                             margin=dict(l=adaptive_margin_l(pair_names)),xaxis_title="Co-occurrence Count",
+                             title=dict(text="PTM Co-occurrence (from combinatorial hPF)",font=dict(size=18)))
+            children.append(html.Div(style=CS, children=[
+                _st("Co-occurrence Analysis", f"{len(pair_counts)} unique PTM pairs from {len(combos)} combinatorial peptidoforms"),
+                dcc.Graph(figure=uf)]))
 
-    # Sort and take top 30
-    sorted_pairs = sorted(pair_counts.items(), key=lambda x: -x[1])[:30]
-    pair_names = [p[0] for p in sorted_pairs]
-    pair_vals = [p[1] for p in sorted_pairs]
-
-    # Horizontal bar chart (UpSet-style intersection sizes)
-    uf = go.Figure(go.Bar(x=pair_vals, y=pair_names, orientation="h",
-                           marker=dict(color=pair_vals,colorscale="Viridis",line=dict(width=0))))
-    pfig(uf, max(400, len(pair_names)*20))
-    uf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=13)),
-                     margin=dict(l=220),xaxis_title="Co-occurrence Count",
-                     title=dict(text="PTM Co-occurrence (from combinatorial hPF)",font=dict(size=18)))
-
-    # ---- Binary detection matrix: which hPTMs are detected per group? ----
-    hptm = d.get("hptm")
+    # ============================================
+    # SECTION 2: Mutual Exclusivity / Co-occurrence Matrix
+    # ============================================
     if hptm is not None and not meta.empty:
-        # For each group, mark PTM as "detected" if mean > threshold
+        # Build binary detection matrix (PTM x Sample)
+        thresh = 0.005
+        binary = (hptm > thresh).astype(int)
+
+        # Compute pairwise co-occurrence and mutual exclusivity
+        ptm_names = list(binary.index)
+        n_ptms = len(ptm_names)
+        n_samps = binary.shape[1]
+
+        if n_ptms >= 3:
+            # Co-occurrence matrix: Jaccard index (intersection / union)
+            jaccard = np.zeros((n_ptms, n_ptms))
+            odds_ratio = np.zeros((n_ptms, n_ptms))
+            for i in range(n_ptms):
+                for j in range(i, n_ptms):
+                    a = binary.iloc[i].values
+                    b = binary.iloc[j].values
+                    both = np.sum(a & b)
+                    either = np.sum(a | b)
+                    jaccard[i,j] = jaccard[j,i] = both / (either + 1e-10)
+                    # Fisher-style odds ratio
+                    a_only = np.sum(a & ~b)
+                    b_only = np.sum(~a & b)
+                    neither = np.sum(~a & ~b)
+                    odds_ratio[i,j] = odds_ratio[j,i] = ((both + 0.5) * (neither + 0.5)) / ((a_only + 0.5) * (b_only + 0.5))
+
+            # Log2 odds ratio: positive = co-occur, negative = mutually exclusive
+            log_or = np.log2(odds_ratio + 1e-10)
+            np.fill_diagonal(log_or, 0)
+
+            # Order by hierarchical clustering
+            try:
+                from scipy.cluster.hierarchy import linkage, leaves_list
+                from scipy.spatial.distance import squareform
+                dist_mat = 1 - jaccard
+                np.fill_diagonal(dist_mat, 0)
+                link = linkage(squareform(dist_mat), method="average")
+                order = leaves_list(link)
+                ptm_ordered = [ptm_names[i] for i in order]
+                log_or_ordered = log_or[order][:, order]
+            except:
+                ptm_ordered = ptm_names
+                log_or_ordered = log_or
+
+            # Co-occurrence / mutual exclusivity heatmap
+            me_hm = phm(log_or_ordered, ptm_ordered, ptm_ordered,
+                         cs="RdBu_r", title="log2(OR)", zmin=-4, zmax=4)
+            me_hm.update_layout(title=dict(text="Co-occurrence / Mutual Exclusivity (log2 Odds Ratio)",
+                                           font=dict(size=18)))
+
+            # Top co-occurring pairs
+            top_cooccur = []
+            top_exclusive = []
+            for i in range(n_ptms):
+                for j in range(i+1, n_ptms):
+                    both = np.sum(binary.iloc[i].values & binary.iloc[j].values)
+                    lor = log_or[i, j]
+                    jac = jaccard[i, j]
+                    entry = {"PTM_A": ptm_names[i], "PTM_B": ptm_names[j],
+                             "Co_detected": int(both), "Jaccard": round(jac, 3),
+                             "Log2_OR": round(lor, 2)}
+                    if lor > 1.0 and both >= 2:
+                        top_cooccur.append(entry)
+                    elif lor < -1.0:
+                        top_exclusive.append(entry)
+
+            top_cooccur.sort(key=lambda x: -x["Log2_OR"])
+            top_exclusive.sort(key=lambda x: x["Log2_OR"])
+
+            # Summary cards
+            n_co = len(top_cooccur)
+            n_ex = len(top_exclusive)
+            summary = html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"12px"}, children=[
+                _sc("PTMs Analyzed", str(n_ptms), C["accent"]),
+                _sc("Co-occurring", str(n_co), C["green"]),
+                _sc("Mutually Exclusive", str(n_ex), C["red"]),
+                _sc("Samples", str(n_samps), C["h4"]),
+            ])
+
+            # Top pairs tables
+            co_table = html.Div()
+            ex_table = html.Div()
+            if top_cooccur:
+                co_df = pd.DataFrame(top_cooccur[:20])
+                co_table = html.Div(style=CS, children=[
+                    _st("Top Co-occurring PTM Pairs", f"log2(OR) > 1, detected together in >= 2 samples"),
+                    make_table(co_df, "cooccur-table")])
+            if top_exclusive:
+                ex_df = pd.DataFrame(top_exclusive[:20])
+                ex_table = html.Div(style=CS, children=[
+                    _st("Top Mutually Exclusive PTM Pairs", "log2(OR) < -1, rarely co-detected"),
+                    make_table(ex_df, "excl-table")])
+
+            children.append(html.H3("Co-occurrence & Mutual Exclusivity",
+                style={"color":C["accent"],"marginTop":"32px","marginBottom":"4px","fontSize":"20px","fontWeight":"700"}))
+            children.append(html.P("Odds ratio measures whether PTM pairs co-occur (positive) or are mutually exclusive (negative) across all samples.",
+                style={"color":C["muted"],"fontSize":"13px","marginBottom":"16px"}))
+            children.append(summary)
+            children.append(html.Div(style=CS, children=[dcc.Graph(figure=me_hm)]))
+            children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+                html.Div(style={"flex":"1","minWidth":"400px"}, children=[co_table]),
+                html.Div(style={"flex":"1","minWidth":"400px"}, children=[ex_table]),
+            ]))
+
+    # ============================================
+    # SECTION 3: Detection Patterns Across Groups
+    # ============================================
+    if hptm is not None and not meta.empty:
         det_data = {}
         for g in groups:
             samps = meta[meta["Group"]==g]["Sample"].tolist()
@@ -2099,7 +2370,6 @@ def tab_upset(d):
                 det_data[g] = (gm > 0.001).astype(int)
         det_df = pd.DataFrame(det_data)
 
-        # UpSet-style: count unique detection patterns
         patterns = {}
         for ptm in det_df.index:
             pat = tuple(det_df.loc[ptm].values)
@@ -2108,16 +2378,19 @@ def tab_upset(d):
             patterns[key] = patterns.get(key, 0) + 1
 
         sp = sorted(patterns.items(), key=lambda x: -x[1])[:20]
-        pf = go.Figure(go.Bar(x=[p[1] for p in sp], y=[p[0] for p in sp], orientation="h",
+        pat_names = [p[0] for p in sp]
+        n_pats = len(pat_names)
+        pf = go.Figure(go.Bar(x=[p[1] for p in sp], y=pat_names, orientation="h",
                                marker=dict(color=[p[1] for p in sp], colorscale="Plasma",line=dict(width=0))))
-        pfig(pf, max(300, len(sp)*22))
-        pf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),
-                         margin=dict(l=250),xaxis_title="# PTMs",
+        pfig(pf, max(300, n_pats*24), n_y=n_pats)
+        pf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=adaptive_font(n_pats))),
+                         margin=dict(l=adaptive_margin_l(pat_names)),xaxis_title="# PTMs",
                          title=dict(text="PTM Detection Patterns Across Groups",font=dict(size=18)))
-    else:
-        pf = go.Figure(); pfig(pf, 300)
+        children.append(html.Div(style=CS, children=[dcc.Graph(figure=pf)]))
 
-    # ---- Modification complexity per sample ----
+    # ============================================
+    # SECTION 4: Modification complexity per sample
+    # ============================================
     n_mods_per_sample = []
     for col in hpf.columns:
         vals = hpf[col].dropna()
@@ -2132,17 +2405,14 @@ def tab_upset(d):
                                    "Single_hPF":n_detected - combo_detected})
 
     ndf = pd.DataFrame(n_mods_per_sample).merge(meta, on="Sample", how="left")
+    n_samps = len(ndf)
     cf = px.bar(ndf, x="Sample", y=["Single_hPF","Combo_hPF"], color_discrete_sequence=[C["accent"],C["warn"]],
                 title="Peptidoform Complexity per Sample", barmode="stack")
-    pfig(cf, 380); cf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=11)),yaxis_title="# Detected hPF")
+    pfig(cf, 380, n_x=n_samps)
+    cf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=adaptive_font(n_samps))),yaxis_title="# Detected hPF")
+    children.append(html.Div(style=CS, children=[dcc.Graph(figure=cf)]))
 
-    return html.Div([
-        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=uf)]),
-            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=pf)]),
-        ]),
-        html.Div(style=CS, children=[dcc.Graph(figure=cf)]),
-    ])
+    return html.Div(children)
 
 
 # ======================================================================
@@ -3325,7 +3595,7 @@ def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, ad
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.7")
+    print("  EpiProfile-Plants Dashboard v3.8")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
