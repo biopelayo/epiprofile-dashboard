@@ -1,61 +1,55 @@
 # EpiProfile-Plants Dashboard
 
-Interactive visualization dashboard for **EpiProfile-Plants** histone PTM quantification output. Built with Dash and Plotly.
+Interactive, publication-quality visualization dashboard for **EpiProfile-Plants** histone PTM quantification output. Built with Dash 4.0 and Plotly 6.0.
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![Dash](https://img.shields.io/badge/Dash-4.0+-green)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![Dash](https://img.shields.io/badge/Dash-4.0+-14532d?logo=plotly&logoColor=white)
+![Plotly](https://img.shields.io/badge/Plotly-6.0+-3F4F75?logo=plotly&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-22c55e)
+![Version](https://img.shields.io/badge/Version-3.8-0f1f13)
+
+---
+
+## Overview
+
+EpiProfile-Plants Dashboard provides **12 interconnected analysis modules** for exploring histone post-translational modification (PTM) data from mass spectrometry experiments. It correctly handles the three-level hierarchical structure of EpiProfile output and provides non-parametric statistics, PCA, biclustering, co-occurrence analysis, and R-ready data export -- all from a web browser with no programming required.
+
+> See [WHITEPAPER.md](WHITEPAPER.md) for the full technical documentation.
+
+---
 
 ## Data Hierarchy
 
-The dashboard correctly classifies EpiProfile output into three biological levels:
+The dashboard classifies EpiProfile output into three biological levels:
 
 | Level | Name | Description | Source |
 |-------|------|-------------|--------|
 | **hDP** | Derivatized Peptide | Peptide region headers (e.g., `TKQTAR(H3_3_8)`) | `histone_ratios.xls` headers |
-| **hPF** | Peptidoform | Combinatorial modifications on a peptide (e.g., `H3_9_17 K9me2K14ac`) | `histone_ratios.xls` data rows |
-| **hPTM** | Individual PTM | Single modification marks (e.g., `H3K4me1`) | `histone_ratios_single_PTMs.xls` |
-| **SeqVar** | Sequence Variant | Amino acid variants per region (e.g., `TKQTAR` vs `TKQSAR`) | `histone_ratios.xls` variant block |
+| **hPF** | Peptidoform | Combinatorial modifications (e.g., `H3_9_17 K9me2K14ac`) | `histone_ratios.xls` data rows |
+| **hPTM** | Individual PTM | Single marks (e.g., `H3K4me1`) | `histone_ratios_single_PTMs.xls` |
+| **Areas** | MS1 Intensities | Raw peak areas, log2 + quantile normalized | `histone_ratios.xls` area block |
+| **RT** | Retention Time | Chromatographic retention times (minutes) | `histone_ratios.xls` RT block |
 
-## Features
+---
 
-| Tab | Description |
+## 12 Analysis Tabs
+
+| Tab | Key Features |
 |-----|-------------|
-| **Peptidoforms (hPF)** | Full hPF ratio heatmap with working filters (histone type, region, group, modification type, min threshold, top N by variance), top variable peptidoforms, group distribution violin plots, editable DataTable |
-| **Single PTMs (hPTM)** | Clustered heatmap, Z-score normalization, violin plots, grouped bars, editable DataTable |
-| **QC Dashboard** | Missingness heatmap, peptide completeness, area distributions, noise analysis, summary stat cards |
-| **PCA & Clustering** | 2D PCA with 95% confidence ellipses, scree plot, PCA biplot with top 15 loading arrows, 3D PCA, hierarchical dendrogram, Spearman correlation heatmap |
-| **Statistics** | Kruskal-Wallis test with Benjamini-Hochberg FDR correction, volcano plot, significant features bar chart |
-| **UpSet / Co-occurrence** | PTM co-occurrence from combinatorial peptidoforms, detection patterns across groups, modification complexity analysis |
-| **Comparisons** | Mann-Whitney U test + FDR, volcano, fold-change bars, MA plots; data level selector (hPTM vs hPF) |
-| **Sample Browser** | PDF chromatogram viewer, per-sample PTM profile bar charts |
+| **Peptidoforms (hPF)** | Clustered heatmap, 6 interactive filters, violin plots, editable DataTable |
+| **Single PTMs (hPTM)** | Z-score heatmap, grouped bars, violin/box plots |
+| **QC Dashboard** | Missingness, completeness, area distributions, before/after QN |
+| **PCA & Clustering** | 2D/3D PCA, biplots, scree, dendrogram, correlation, biclustering, K-Means |
+| **Statistics** | Kruskal-Wallis + BH-FDR, volcano, enrichment, data source selector |
+| **UpSet / Co-occurrence** | Detection patterns, Jaccard index, log2 odds ratio, mutual exclusivity |
+| **Region Map** | Mean ratios at derivatized peptide level |
+| **Comparisons** | Mann-Whitney U pairwise, volcano, FC bars, MA plots |
+| **Phenodata** | Sample metadata viewer |
+| **Sample Browser** | PDF chromatograms, per-sample profiles |
+| **Export to R** | Filtered data + R script bundle (ZIP) |
+| **Analysis Log** | SQLite-backed audit trail |
 
-### v3.1 Highlights
-
-- **Proper hDP/hPF/hPTM hierarchy** — correctly classifies peptide regions, peptidoforms, individual marks, and sequence variants
-- **Working filter callbacks** — 6 interactive filters on the Peptidoforms tab that actually filter data
-- **Publication PCA** — biplots with loading arrows, 95% confidence ellipses, scree plots, 3D PCA
-- **UpSet plots** — PTM co-occurrence analysis from combinatorial peptidoforms (pure Plotly)
-- **Robust statistics** — Kruskal-Wallis + Mann-Whitney U with Benjamini-Hochberg FDR correction
-- **Clean white professional theme** with publication-quality styling
-- **4 experiment support** out of the box (PXD046788, PXD014739, PXD046034, Ontogeny)
-- **Editable DataTables** — sort, filter, edit cells, delete rows/columns, export CSV on the fly
-- **Recursive file finder** — auto-discovers data files in nested directory structures
-
-### Supported EpiProfile Output
-
-The dashboard auto-detects and parses:
-
-- `histone_ratios.xls` / `.tsv` — Full ratio + area matrices (TSV format)
-- `histone_ratios_single_PTMs.xls` / `.tsv` — 45 individual PTM marks
-- `histone_logs.txt` — Processing log with RT warnings
-- `histone_layouts/` — Per-sample folders with:
-  - PDF chromatograms (XIC plots)
-  - `detail/*.xls` — Area and RT data per peptide region
-  - `detail/psm/identification_list.xls` — Peptide-spectrum matches
-  - `detail/psm/*.plabel` — Spectrum-to-modification mappings
-  - `H3_Snapshot.xls`, `H4_Snapshot.xls` — Amino acid modification maps
-- `phenodata_arabidopsis_project.tsv` — Sample metadata (optional)
+---
 
 ## Quick Start
 
@@ -67,50 +61,130 @@ cd epiprofile-dashboard
 # Install dependencies
 pip install -r requirements.txt
 
-# Run with your EpiProfile output directory
+# Run with default experiments
+python epiprofile_dashboard.py
+
+# Or with your own EpiProfile output directory
 python epiprofile_dashboard.py /path/to/epiprofile/output
 
-# Or multiple experiments
+# Multiple experiments
 python epiprofile_dashboard.py /path/to/exp1 /path/to/exp2
 
 # Custom port
 python epiprofile_dashboard.py /path/to/output --port 8080
 ```
 
-Then open **http://localhost:8050** in your browser.
+Open **http://localhost:8050** in your browser.
 
-## What is EpiProfile-Plants?
+---
 
-[EpiProfile](https://github.com/zfyuan/EpiProfile2.0) is a MATLAB-based tool for quantifying histone post-translational modifications (PTMs) from mass spectrometry data. The `-Plants` variant is optimized for plant histones (H3.1, H3.3 variants).
+## Key Features
 
-This dashboard provides interactive visualization of EpiProfile output that goes beyond the static MATLAB PDFs, enabling:
+### Normalization Pipeline
+Raw MS1 areas undergo: **zeros to NaN** (non-detects) -> **log2 transform** -> **quantile normalization** (Bolstad 2003). This corrects systematic run-to-run biases while preserving non-detected features as NaN.
 
-- Multi-experiment comparison with dropdown selector
-- Proper hDP/hPF/hPTM data level classification
-- Clustered heatmaps with hierarchical ordering
-- PCA biplots with confidence ellipses for sample quality
-- Kruskal-Wallis and Mann-Whitney statistical testing with FDR
-- UpSet-style PTM co-occurrence analysis
-- PSM-level mass accuracy quality control
-- Publication-ready plots with consistent styling
-- On-the-fly data editing and CSV export
-- Advanced PTM filtering with multiple criteria
+### Non-parametric Statistics
+- **Kruskal-Wallis H-test** for multi-group comparisons
+- **Mann-Whitney U test** for pairwise comparisons
+- **Benjamini-Hochberg FDR** correction
+- Log-scale aware fold-change computation
+
+### Interactive Analysis
+- Switch between **ratios** (compositional) and **areas** (absolute) as data source
+- 12 ggsci-inspired color palettes
+- Experiment selector with live upload support
+- Design filters for complex experiments
+- CSV/TSV/R-bundle export with user-defined filters
+
+### Biclustering
+Spectral biclustering (Kluger 2003) simultaneously clusters features and samples, with cluster boundary visualization and group color annotations.
+
+### Co-occurrence Analysis
+Jaccard similarity + log2 odds ratio matrices reveal PTM pairs that co-occur or are mutually exclusive, with hierarchical clustering visualization.
+
+---
+
+## Supported Experiments
+
+Ships with 5 pre-configured *Arabidopsis thaliana* experiments:
+
+| Experiment | Samples | Groups | Data Available |
+|-----------|---------|--------|----------------|
+| PXD046788 | 58 | 5 | Ratios + Areas + RT |
+| PXD014739 | 114 | 7 | Ratios only |
+| PXD046034 | 48 | 8 | Ratios + Areas + RT |
+| Ontogeny 1exp | 34 | 4 | Ratios only |
+| Ontogeny RawData | 34 | 4 | Ratios + Areas + RT |
+
+New experiments can be uploaded directly via the web interface (Replace or New mode).
+
+---
+
+## Input File Formats
+
+EpiProfile-Plants generates `.xls` files that are actually **tab-separated** (TSV, MATLAB convention):
+
+| File | Content |
+|------|---------|
+| `histone_ratios.xls` | Three blocks: Ratios, Areas, RT (separated by unnamed columns) |
+| `histone_ratios_single_PTMs.xls` | 45 individual PTM marks |
+| `phenodata_arabidopsis_project.tsv` | Sample metadata (Sample, Group, Design) |
+| `histone_layouts/` | Per-sample PDFs, detail files, PSMs |
+
+---
 
 ## Directory Structure
 
 ```
 epiprofile-dashboard/
-├── epiprofile_dashboard.py   # Main application (single file, ~1440 lines)
-├── requirements.txt          # Python dependencies
-├── .gitignore
-└── README.md
+|-- epiprofile_dashboard.py   # Main application (~3,700 lines)
+|-- WHITEPAPER.md             # Technical white paper
+|-- requirements.txt          # Python dependencies
+|-- .gitignore
+|-- README.md
 ```
+
+---
 
 ## Requirements
 
-- Python 3.10+
-- ~200 MB RAM per loaded experiment
-- Modern browser (Chrome, Firefox, Edge)
+- **Python** 3.10+
+- **Memory** ~200 MB per loaded experiment
+- **Browser** Chrome, Firefox, or Edge
+
+---
+
+## Version History
+
+| Version | Highlights |
+|---------|-----------|
+| v3.8 | Biclustering fix, co-occurrence analysis, web upload, dark theme header |
+| v3.7 | Statistics bug fixes, Export to R tab |
+| v3.6 | Areas as primary data source, log2+QN normalization |
+| v3.5 | SQLite logging, biclustering, adaptive sizing, 3-slot upload |
+| v3.4 | 12 ggsci color palettes, enriched phenodata |
+| v3.3 | Green theme, upload support, 5th experiment |
+| v3.2 | Region Map, Phenodata tab, faceted violins |
+| v3.1 | hDP/hPF/hPTM hierarchy, PCA biplots, UpSet, statistics |
+
+---
+
+## Citation
+
+If you use this dashboard in your research, please cite:
+
+```
+EpiProfile-Plants Dashboard v3.8
+https://github.com/biopelayo/epiprofile-dashboard
+```
+
+---
+
+## What is EpiProfile-Plants?
+
+[EpiProfile](https://github.com/zfyuan/EpiProfile2.0) is a MATLAB-based tool for quantifying histone post-translational modifications from mass spectrometry data. The `-Plants` variant is optimized for plant histones (H3.1, H3.3 variants). This dashboard provides interactive visualization and statistical analysis that goes beyond the static MATLAB PDFs.
+
+---
 
 ## License
 

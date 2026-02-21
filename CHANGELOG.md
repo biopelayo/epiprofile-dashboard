@@ -1,0 +1,129 @@
+# Changelog
+
+All notable changes to EpiProfile-Plants Dashboard.
+
+---
+
+## v3.8.2 (2026-02-21)
+
+### Changed
+- Header redesign: dark green/black gradient with elegant typography
+- Title 44px with text shadow, version badge with green glow
+- Matching dark footer with green accents
+- Tabs: larger font (14.5px), green selected underline
+- Description bar: neutral grey with darker badges
+
+---
+
+## v3.8.1 (2026-02-21)
+
+### Changed
+- Lighter header gradient, removed SVG logo
+- Modernized upload section with glass card styling
+- Wider content area (1800px max)
+
+---
+
+## v3.8 (2026-02-21)
+
+### Fixed
+- Biclustering x/y axis swap in phm() calls
+- K-Means heatmap x/y swap (groups as columns, clusters as rows)
+- SpectralBiclustering: added positive shift and log method for numerical stability
+- Cluster boundary lines on biclustering heatmap
+
+### Added
+- Co-occurrence / mutual exclusivity analysis (Jaccard + log2 odds ratio)
+- New experiment upload via web browser (Replace or New mode)
+- Group color bar annotations on cluster heatmaps
+- Adaptive axis sizing with smoother font curve (7-18pt)
+- Auto-height for heatmaps based on feature count
+
+### Changed
+- Improved header/footer aesthetics with glass effects
+- Adaptive bottom margins for rotated axis labels
+
+---
+
+## v3.7 (2026-02-21)
+
+### Fixed
+- `_db()` name collision: callback function shadowed SQLite helper, causing crash
+- `n_up` bitwise AND: scalar & Series bug in statistics summary
+- `_stats_export`: now respects user filter selections (source, design, FDR)
+- `_enrich_stats`: added `is_log` parameter to prevent double-log FC
+- `tab_log` DataFrame truthiness: `if df:` -> `if not df.empty`
+
+### Added
+- **Export to R tab**: user-defined filters, R script generation, ZIP bundle export
+- Preview button for export data
+- CSV/TSV format options
+
+---
+
+## v3.6 (2026-02-20)
+
+### Added
+- Areas as primary data source (log2 + quantile normalization)
+- Data Source dropdowns in PCA, Statistics, and Comparisons tabs
+- Separator bug fix: correctly parses all 3 blocks in histone_ratios.xls
+- RT (retention time) extraction and storage
+- QC tab: before/after quantile normalization box plots
+
+---
+
+## v3.5 (2026-02-20)
+
+### Added
+- SQLite database for analysis logging and session tracking
+- Statistics/Comparisons: classification filters (histone, PTM type, direction)
+- Spectral biclustering in PCA tab
+- CSV export from statistics and comparisons
+- 3-slot file upload with validation
+- Adaptive font sizing for axis labels
+- Analysis Log tab
+
+---
+
+## v3.4 (2026-02-20)
+
+### Added
+- 12 color palettes (ggsci-inspired) with dropdown selector
+- Increased axis label sizes across all plots
+- Enriched phenodata with additional metadata columns
+
+---
+
+## v3.3 (2026-02-20)
+
+### Added
+- Green plant gradient theme
+- File upload support (phenodata + ratios + single PTMs)
+- 5th experiment (Ontogeny RawData)
+- Design filter for multi-design experiments (PXD046034)
+
+---
+
+## v3.2 (2026-02-19)
+
+### Added
+- Region Map tab (hDP-level aggregated heatmap)
+- Phenodata tab (sample metadata viewer)
+- Faceted violin plots
+
+### Fixed
+- PCA variance labeling
+
+---
+
+## v3.1 (2026-02-19)
+
+### Added
+- Proper hDP/hPF/hPTM data hierarchy classification
+- 6 interactive filters on Peptidoforms tab
+- PCA with 95% confidence ellipses, biplots, 3D
+- UpSet plots for PTM co-occurrence
+- Kruskal-Wallis + Mann-Whitney U statistics with BH-FDR
+- Editable DataTables with CSV export
+- 4 pre-configured experiments
+- Recursive file finder for nested directories
