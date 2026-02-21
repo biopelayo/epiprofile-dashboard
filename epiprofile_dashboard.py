@@ -1120,29 +1120,44 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                     for ic, lbl in [("ptm","hPTM"), ("peptidoform","hPF"), ("dna","hDP"), ("chromatogram","Areas"), ("clock","RT")]
                 ]),
             ]),
-            html.Div(style={"flex":"1","minWidth":"30px"}),
-            # Experiment selector -- enhanced glass card
-            html.Div(style={"background":"rgba(255,255,255,0.06)","borderRadius":"16px","padding":"18px 24px",
-                             "border":"1px solid rgba(255,255,255,0.10)","backdropFilter":"blur(20px)",
-                             "boxShadow":"0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05)"}, children=[
-                html.Span([_svg_icon("flask", 13, {"filter":"brightness(2)"}), " EXPERIMENT"],
-                          style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
-                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"flex","alignItems":"center","gap":"6px","marginBottom":"10px"}),
-                dcc.Dropdown(id="exp-sel", options=[{"label":k,"value":k} for k in EXP_DATA],
-                             value=DEFAULT_EXP, clearable=False,
-                             style={"width":"440px","fontSize":"14px","borderRadius":"10px"}),
-            ]),
-            # Color palette selector -- enhanced glass card
-            html.Div(style={"background":"rgba(255,255,255,0.06)","borderRadius":"16px","padding":"18px 24px",
-                             "border":"1px solid rgba(255,255,255,0.10)","backdropFilter":"blur(20px)",
-                             "boxShadow":"0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05)"}, children=[
-                html.Span([_svg_icon("palette", 13, {"filter":"brightness(2)"}), " PALETTE"],
-                          style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
-                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"flex","alignItems":"center","gap":"6px","marginBottom":"10px"}),
-                dcc.Dropdown(id="palette-sel",
-                             options=[{"label":k,"value":k} for k in PALETTES],
-                             value="EpiProfile (default)", clearable=False,
-                             style={"width":"220px","fontSize":"14px","borderRadius":"10px"}),
+            html.Div(style={"flex":"1","minWidth":"20px"}),
+            # RIGHT PANEL: Experiment + Palette selectors -- stacked glass cards
+            html.Div(style={"display":"flex","flexDirection":"column","gap":"10px"}, children=[
+                # Experiment selector -- prominent rounded card with icon
+                html.Div(style={"background":"rgba(255,255,255,0.08)","borderRadius":"20px","padding":"14px 22px",
+                                 "border":"1px solid rgba(134,239,172,0.2)","backdropFilter":"blur(20px)",
+                                 "boxShadow":"0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08)",
+                                 "display":"flex","alignItems":"center","gap":"14px"}, children=[
+                    html.Div(style={"background":"rgba(34,197,94,0.15)","borderRadius":"14px","padding":"10px",
+                                     "display":"flex","alignItems":"center","justifyContent":"center",
+                                     "border":"1px solid rgba(34,197,94,0.25)"}, children=[
+                        _svg_icon("flask", 22, {"filter":"brightness(1.8)"}),
+                    ]),
+                    html.Div(style={"flex":"1"}, children=[
+                        html.Div("EXPERIMENT", style={"color":"#86efac","fontSize":"9px","fontWeight":"700",
+                                  "letterSpacing":"2px","textTransform":"uppercase","marginBottom":"6px"}),
+                        dcc.Dropdown(id="exp-sel", options=[{"label":k,"value":k} for k in EXP_DATA],
+                                     value=DEFAULT_EXP, clearable=False,
+                                     style={"width":"420px","fontSize":"13px","borderRadius":"12px"}),
+                    ]),
+                ]),
+                # Palette selector -- smaller matching card
+                html.Div(style={"background":"rgba(255,255,255,0.06)","borderRadius":"20px","padding":"12px 22px",
+                                 "border":"1px solid rgba(255,255,255,0.08)","backdropFilter":"blur(20px)",
+                                 "display":"flex","alignItems":"center","gap":"14px"}, children=[
+                    html.Div(style={"background":"rgba(34,197,94,0.10)","borderRadius":"12px","padding":"8px",
+                                     "display":"flex","alignItems":"center","justifyContent":"center"}, children=[
+                        _svg_icon("palette", 18, {"filter":"brightness(1.6)"}),
+                    ]),
+                    html.Div(style={"flex":"1"}, children=[
+                        html.Div("COLOR PALETTE", style={"color":"#9ca3af","fontSize":"9px","fontWeight":"600",
+                                  "letterSpacing":"1.5px","textTransform":"uppercase","marginBottom":"5px"}),
+                        dcc.Dropdown(id="palette-sel",
+                                     options=[{"label":k,"value":k} for k in PALETTES],
+                                     value="EpiProfile (default)", clearable=False,
+                                     style={"width":"240px","fontSize":"13px","borderRadius":"12px"}),
+                    ]),
+                ]),
             ]),
         ]),
         # Stats ribbon -- enhanced with icons
@@ -1526,6 +1541,14 @@ def _rt(tab, exp, pal):
 # HELPERS
 # ======================================================================
 
+def _pub_kw(**overrides):
+    """Get PUB layout kwargs safely, removing keys that would conflict with overrides."""
+    base = PUB.layout.to_plotly_json()
+    for k in list(overrides.keys()):
+        base.pop(k, None)
+    base.update(overrides)
+    return base
+
 def adaptive_font(n_items, base=14, min_size=7, max_size=18):
     """Compute font size based on number of items to display."""
     if n_items is None or n_items <= 0: return base
@@ -1634,13 +1657,20 @@ def _sc(label, val, color):
 
 def _st(text, sub="", icon=""):
     h3_style = {"color":"#0f1f13","marginTop":"0","marginBottom":"6px","fontSize":"20px","fontWeight":"800",
-                "letterSpacing":"-0.3px","display":"flex","alignItems":"center","gap":"8px"}
+                "letterSpacing":"-0.3px","display":"flex","alignItems":"center","gap":"12px"}
     h3_children = []
     if icon and icon in ICONS:
-        h3_children.append(_svg_icon(icon, size=22))
+        # Rounded icon badge: green-tinted background circle with SVG inside
+        h3_children.append(html.Div(
+            _svg_icon(icon, size=24),
+            style={"background":"linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                   "borderRadius":"12px","padding":"8px","display":"inline-flex",
+                   "alignItems":"center","justifyContent":"center",
+                   "border":"1px solid #bbf7d0","boxShadow":"0 2px 8px rgba(34,197,94,0.12)",
+                   "flexShrink":"0"}))
     h3_children.append(html.Span(text))
     ch = [html.H3(h3_children, style=h3_style)]
-    if sub: ch.append(html.P(sub,style={"color":C["muted"],"margin":"0 0 14px","fontSize":"13px"}))
+    if sub: ch.append(html.P(sub,style={"color":C["muted"],"margin":"0 0 14px","fontSize":"13px","paddingLeft":"52px" if icon and icon in ICONS else "0"}))
     return html.Div(ch)
 
 def _lbl(text):
@@ -3605,8 +3635,8 @@ def tab_k79(d, exp_name):
             z=k79_ordered.values, x=k79_cols, y=k79_ordered.index.tolist(),
             colorscale=[[0,"#fefce8"],[0.3,"#fde047"],[0.6,"#f59e0b"],[1.0,"#92400e"]],
             colorbar=dict(title="Ratio")))
-        fig_hm.update_layout(**PUB.layout.to_plotly_json(), title="K79 Modification Ratios per Sample",
-                             height=200 + 40*len(k79_feats), xaxis_tickangle=-45)
+        fig_hm.update_layout(**_pub_kw(title="K79 Modification Ratios per Sample",
+                             height=200 + 40*len(k79_feats), xaxis_tickangle=-45))
         children.append(html.Div(style=CS, children=[
             _st("K79 Peptidoform Ratios", "Heatmap of K79me1/me2/me3/ac ratios across all samples | golden colorscale", icon="heatmap"),
             dcc.Graph(figure=fig_hm),
@@ -3628,9 +3658,8 @@ def tab_k79(d, exp_name):
             box_df = pd.DataFrame(rows_box)
             fig_box = px.box(box_df, x="PTM", y="Ratio", color="Group", points="all",
                              color_discrete_sequence=GC, template="plotly_white")
-            pub_kw = {k: v for k, v in PUB.layout.to_plotly_json().items() if k != "legend"}
-            fig_box.update_layout(**pub_kw, title="H3K79 Single PTM Abundances by Group",
-                                  height=450, legend=dict(font=dict(size=11)))
+            fig_box.update_layout(**_pub_kw(title="H3K79 Single PTM Abundances by Group",
+                                  height=450, legend=dict(font=dict(size=11))))
             children.append(html.Div(style=CS, children=[
                 _st("K79 Single PTM Abundances", "Box plots showing ratio distribution per K79 modification across groups", icon="bar_chart"),
                 dcc.Graph(figure=fig_box),
@@ -3652,8 +3681,8 @@ def tab_k79(d, exp_name):
                 area_df = pd.DataFrame(rows_area)
                 fig_area = px.violin(area_df, x="Feature", y="log2_Area", color="Group", box=True,
                                      color_discrete_sequence=GC, template="plotly_white")
-                fig_area.update_layout(**PUB.layout.to_plotly_json(), title="K79 Feature Intensities (log2 normalized)",
-                                       height=450)
+                fig_area.update_layout(**_pub_kw(title="K79 Feature Intensities (log2 normalized)",
+                                       height=450))
                 children.append(html.Div(style=CS, children=[
                     _st("K79 MS1 Intensities", "Violin plots of log2 quantile-normalized areas | evidence for detection strength", icon="chromatogram"),
                     dcc.Graph(figure=fig_area),
@@ -3675,8 +3704,8 @@ def tab_k79(d, exp_name):
                 rt_box = pd.DataFrame(rows_rt)
                 fig_rt = px.box(rt_box, x="Feature", y="RT_min", color="Group", points="all",
                                 color_discrete_sequence=GC, template="plotly_white")
-                fig_rt.update_layout(**PUB.layout.to_plotly_json(), title="K79 Retention Times (minutes)",
-                                     height=400, yaxis_title="RT (min)")
+                fig_rt.update_layout(**_pub_kw(title="K79 Retention Times (minutes)",
+                                     height=400, yaxis_title="RT (min)"))
                 children.append(html.Div(style=CS, children=[
                     _st("K79 Retention Time Consistency", "RT spread across samples validates chromatographic reproducibility", icon="clock"),
                     dcc.Graph(figure=fig_rt),
@@ -3719,8 +3748,8 @@ def tab_k79(d, exp_name):
                             if len(mod_ppm) > 0:
                                 fig_ppm.add_trace(go.Histogram(x=mod_ppm, nbinsx=50, marker_color="#22c55e",
                                                                name="K79 modified", opacity=0.7))
-                        fig_ppm.update_layout(**PUB.layout.to_plotly_json(), title="Mass Accuracy (ppm) for H3 73-83 PSMs",
-                                              xaxis_title="ppm error", yaxis_title="Count", height=350, barmode="overlay")
+                        fig_ppm.update_layout(**_pub_kw(title="Mass Accuracy (ppm) for H3 73-83 PSMs",
+                                              xaxis_title="ppm error", yaxis_title="Count", height=350, barmode="overlay"))
                         children.append(html.Div(style=CS, children=[dcc.Graph(figure=fig_ppm)]))
 
                 # RT from PSMs
@@ -3735,8 +3764,8 @@ def tab_k79(d, exp_name):
                     z_counts = k79_psm[z_c].value_counts().sort_index()
                     fig_z = go.Figure(go.Bar(x=[f"+{int(z)}" for z in z_counts.index],
                                              y=z_counts.values, marker_color="#f59e0b"))
-                    fig_z.update_layout(**PUB.layout.to_plotly_json(), title="Charge State Distribution (H3 73-83 PSMs)",
-                                        xaxis_title="Charge", yaxis_title="PSM count", height=300)
+                    fig_z.update_layout(**_pub_kw(title="Charge State Distribution (H3 73-83 PSMs)",
+                                        xaxis_title="Charge", yaxis_title="PSM count", height=300))
                     children.append(html.Div(style=CS, children=[dcc.Graph(figure=fig_z)]))
 
                 # Modification breakdown
@@ -3747,10 +3776,10 @@ def tab_k79(d, exp_name):
                         fig_mc = go.Figure(go.Bar(
                             y=mod_counts.index.tolist(), x=mod_counts.values,
                             orientation="h", marker_color=["#f59e0b" if "79" in str(m) else "#d1d5db" for m in mod_counts.index]))
-                        fig_mc.update_layout(**PUB.layout.to_plotly_json(),
+                        fig_mc.update_layout(**_pub_kw(
                                              title="Top Modification Combinations in H3 73-83 PSMs",
                                              height=max(250, 30*len(mod_counts)),
-                                             margin=dict(l=max(200, max(len(str(m)) for m in mod_counts.index)*7)))
+                                             margin=dict(l=max(200, max(len(str(m)) for m in mod_counts.index)*7))))
                         children.append(html.Div(style=CS, children=[
                             _st("Modification Combinations", "K79-containing modifications highlighted in gold", icon="tag"),
                             dcc.Graph(figure=fig_mc),
@@ -3807,9 +3836,9 @@ def tab_k79(d, exp_name):
                 fig_det = px.box(ratio_det, x="Modification", y="Total", color="Modification",
                                  color_discrete_sequence=["#f59e0b","#d97706","#92400e","#22c55e"],
                                  template="plotly_white", points="all")
-                fig_det.update_layout(**PUB.layout.to_plotly_json(),
+                fig_det.update_layout(**_pub_kw(
                                       title="Per-Sample K79 Ratios (from detail files)",
-                                      height=400, showlegend=False)
+                                      height=400, showlegend=False))
                 children.append(html.Div(style=CS, children=[
                     _st("Per-Sample Detail Ratios", f"Extracted from {len(folders)} sample detail files | charge-state aggregated",
                         icon="search"),
@@ -3823,9 +3852,9 @@ def tab_k79(d, exp_name):
                 fig_adet = px.box(area_det_log, x="Modification", y="log2_Area", color="Modification",
                                   color_discrete_sequence=["#f59e0b","#d97706","#92400e","#22c55e"],
                                   template="plotly_white", points="all")
-                fig_adet.update_layout(**PUB.layout.to_plotly_json(),
+                fig_adet.update_layout(**_pub_kw(
                                        title="Per-Sample K79 MS1 Areas (from detail files)",
-                                       height=400, showlegend=False)
+                                       height=400, showlegend=False))
                 children.append(html.Div(style=CS, children=[
                     _st("Per-Sample Detail Areas", "log2(MS1 area) from per-sample region detail files", icon="chromatogram"),
                     dcc.Graph(figure=fig_adet),
@@ -3843,10 +3872,10 @@ def tab_k79(d, exp_name):
         for feat, rate in k79_rates.items():
             fig_comp.add_vline(x=rate, line_dash="dash", line_color="#f59e0b", line_width=2,
                                annotation_text=str(feat).split()[-1], annotation_position="top")
-        fig_comp.update_layout(**PUB.layout.to_plotly_json(),
+        fig_comp.update_layout(**_pub_kw(
                                title="K79 Detection Rate vs All Other Features",
                                xaxis_title="Detection Rate (%)", yaxis_title="Count",
-                               height=350)
+                               height=350))
         children.append(html.Div(style=CS, children=[
             _st("K79 in Global Context", "Vertical lines show K79 features against the distribution of all features", icon="spectra_compare"),
             dcc.Graph(figure=fig_comp),
