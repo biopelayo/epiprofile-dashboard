@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.10 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.11 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -145,6 +145,109 @@ def get_session_info():
     return {}
 
 # ======================================================================
+# SVG ICON LIBRARY  -- green line-art scientific icons (data-URI)
+# ======================================================================
+
+import urllib.parse as _urlparse
+
+def _svg_icon(key, size=16, extra_style=None):
+    """Return html.Img for an SVG icon by key. Falls back to empty span."""
+    svg = ICONS.get(key)
+    if not svg:
+        return html.Span("")
+    encoded = _urlparse.quote(svg)
+    st = {"width": f"{size}px", "height": f"{size}px",
+          "verticalAlign": "middle", "display": "inline-block"}
+    if extra_style:
+        st.update(extra_style)
+    return html.Img(src=f"data:image/svg+xml,{encoded}", style=st)
+
+_S = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'
+
+ICONS = {
+    # -- Histone / peptidoform: barrel + 3 PTM dots --
+    "peptidoform": f'<svg {_S}><rect x="4" y="6" width="16" height="12" rx="4"/><circle cx="8" cy="12" r="1.3" fill="#22c55e"/><circle cx="12" cy="12" r="1.3" fill="#22c55e"/><circle cx="16" cy="12" r="1.3" fill="#22c55e"/></svg>',
+    # -- Single PTM mark: circle with radiating dot --
+    "ptm": f'<svg {_S}><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="#22c55e"/><line x1="12" y1="3" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21"/><line x1="3" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21" y2="12"/></svg>',
+    # -- QC badge: shield + check --
+    "qc": f'<svg {_S}><path d="M12 2L3 7v5c0 5.5 3.8 10.3 9 12 5.2-1.7 9-6.5 9-12V7z"/><polyline points="9,12 11,14 15,10"/></svg>',
+    # -- PCA scatter: axis + 3 cluster groups --
+    "pca": f'<svg {_S}><line x1="3" y1="21" x2="3" y2="3"/><line x1="3" y1="21" x2="21" y2="21"/><circle cx="7" cy="16" r="1.2" fill="#22c55e"/><circle cx="8" cy="14" r="1.2" fill="#22c55e"/><circle cx="9" cy="15" r="1.2" fill="#22c55e"/><circle cx="14" cy="8" r="1.2" fill="#16a34a"/><circle cx="16" cy="9" r="1.2" fill="#16a34a"/><circle cx="15" cy="7" r="1.2" fill="#16a34a"/><circle cx="18" cy="15" r="1.2" fill="#4ade80"/><circle cx="19" cy="13" r="1.2" fill="#4ade80"/></svg>',
+    # -- Bar chart + asterisk: statistical bars --
+    "bar_chart": f'<svg {_S}><rect x="4" y="14" width="3" height="7" rx="0.5"/><rect x="10" y="8" width="3" height="13" rx="0.5"/><rect x="16" y="4" width="3" height="17" rx="0.5"/><text x="19" y="6" font-size="8" fill="#22c55e" stroke="none" font-weight="bold">*</text></svg>',
+    # -- Venn: 2 overlapping circles --
+    "venn": f'<svg {_S}><circle cx="9" cy="12" r="6" opacity="0.7"/><circle cx="15" cy="12" r="6" opacity="0.7"/></svg>',
+    # -- Region map: horizontal line + 3 ticks --
+    "region": f'<svg {_S}><line x1="2" y1="12" x2="22" y2="12"/><line x1="6" y1="8" x2="6" y2="16"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="18" y1="8" x2="18" y2="16"/><circle cx="6" cy="8" r="1" fill="#22c55e"/><circle cx="12" cy="8" r="1" fill="#4ade80"/><circle cx="18" cy="8" r="1" fill="#16a34a"/></svg>',
+    # -- Balance/comparisons: scale --
+    "balance": f'<svg {_S}><line x1="12" y1="3" x2="12" y2="21"/><line x1="4" y1="7" x2="20" y2="7"/><path d="M4 7l2 7h-4z"/><path d="M20 7l2 7h-4z"/><line x1="8" y1="21" x2="16" y2="21"/></svg>',
+    # -- Data table: 3x3 grid --
+    "table": f'<svg {_S}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>',
+    # -- Search/magnifier + peak --
+    "search": f'<svg {_S}><circle cx="10" cy="10" r="6"/><line x1="14.5" y1="14.5" x2="21" y2="21"/><polyline points="7,12 9,8 11,11 13,9" stroke-width="1.5"/></svg>',
+    # -- R logo --
+    "r_logo": f'<svg {_S}><circle cx="12" cy="12" r="9"/><text x="8" y="17" font-size="14" fill="#22c55e" stroke="none" font-weight="bold" font-family="serif">R</text></svg>',
+    # -- Spectra compare: two overlapping peaks --
+    "spectra_compare": f'<svg {_S}><polyline points="2,18 5,18 7,6 9,18 12,18" stroke="#22c55e"/><polyline points="10,18 13,18 15,8 17,18 22,18" stroke="#16a34a" stroke-dasharray="3,2"/></svg>',
+    # -- Analysis log: clock + list --
+    "log": f'<svg {_S}><circle cx="8" cy="8" r="5"/><polyline points="8,5 8,8 10,9"/><line x1="16" y1="6" x2="22" y2="6"/><line x1="16" y1="10" x2="22" y2="10"/><line x1="14" y1="14" x2="22" y2="14"/><line x1="14" y1="18" x2="22" y2="18"/></svg>',
+    # -- Plant/Arabidopsis rosette: 5-petal leaf --
+    "plant": f'<svg {_S}><path d="M12 21c0-6-4-9-4-14a4 4 0 018 0c0 5-4 8-4 14z"/><path d="M12 21c-3-2-7-3-9-1" /><path d="M12 21c3-2 7-3 9-1"/><line x1="12" y1="21" x2="12" y2="7"/></svg>',
+    # -- DNA helix --
+    "dna": f'<svg {_S}><path d="M6 3c0 4 12 4 12 8s-12 4-12 8"/><path d="M18 3c0 4-12 4-12 8s12 4 12 8"/><line x1="7" y1="7" x2="17" y2="7" stroke-width="1.2"/><line x1="7" y1="11" x2="17" y2="11" stroke-width="1.2"/><line x1="7" y1="15" x2="17" y2="15" stroke-width="1.2"/></svg>',
+    # -- Microscope/LC-MS --
+    "microscope": f'<svg {_S}><circle cx="12" cy="6" r="3"/><line x1="12" y1="9" x2="12" y2="16"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="7" y1="20" x2="17" y2="20"/><line x1="10" y1="16" x2="14" y2="16"/><line x1="12" y1="16" x2="12" y2="20"/></svg>',
+    # -- Seedling: growth stages --
+    "seedling": f'<svg {_S}><path d="M12 22v-8"/><path d="M12 14c-3-1-5-4-5-7a5 5 0 0110 0c0 3-2 6-5 7z"/><path d="M8 18c-2 0-3-1-3-3"/><path d="M16 18c2 0 3-1 3-3"/></svg>',
+    # -- Flask/experiment: Erlenmeyer --
+    "flask": f'<svg {_S}><path d="M9 3h6"/><path d="M10 3v6l-5 9a1 1 0 001 1h12a1 1 0 001-1l-5-9V3"/><path d="M7 17h10" stroke-dasharray="2,2"/></svg>',
+    # -- Palette: 3 color dots --
+    "palette": f'<svg {_S}><circle cx="8" cy="10" r="3" fill="#22c55e" stroke="none"/><circle cx="14" cy="8" r="3" fill="#16a34a" stroke="none"/><circle cx="16" cy="14" r="3" fill="#4ade80" stroke="none"/><path d="M20 12a8 8 0 10-16 0 8 8 0 0016 0z"/></svg>',
+    # -- Folder --
+    "folder": f'<svg {_S}><path d="M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>',
+    # -- Dashboard/grid: 4 panels --
+    "dashboard": f'<svg {_S}><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="4" rx="1"/><rect x="13" y="9" width="8" height="12" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg>',
+    # -- Fire/trending: upward arrow --
+    "fire": f'<svg {_S}><polyline points="3,17 8,12 12,14 21,5"/><polyline points="16,5 21,5 21,10"/></svg>',
+    # -- Violin plot shape --
+    "violin": f'<svg {_S}><path d="M10 3c-3 3-5 5-5 9s2 6 5 9"/><path d="M14 3c3 3 5 5 5 9s-2 6-5 9"/><line x1="5" y1="12" x2="19" y2="12" stroke-dasharray="2,2"/></svg>',
+    # -- Heatmap: 3x3 colored grid --
+    "heatmap": f'<svg {_S}><rect x="3" y="3" width="5" height="5" rx="0.5" fill="#22c55e" stroke="none"/><rect x="9.5" y="3" width="5" height="5" rx="0.5" fill="#86efac" stroke="none"/><rect x="16" y="3" width="5" height="5" rx="0.5" fill="#14532d" stroke="none"/><rect x="3" y="9.5" width="5" height="5" rx="0.5" fill="#4ade80" stroke="none"/><rect x="9.5" y="9.5" width="5" height="5" rx="0.5" fill="#166534" stroke="none"/><rect x="16" y="9.5" width="5" height="5" rx="0.5" fill="#22c55e" stroke="none"/><rect x="3" y="16" width="5" height="5" rx="0.5" fill="#14532d" stroke="none"/><rect x="9.5" y="16" width="5" height="5" rx="0.5" fill="#22c55e" stroke="none"/><rect x="16" y="16" width="5" height="5" rx="0.5" fill="#4ade80" stroke="none"/></svg>',
+    # -- Chromatogram: MS1 peak line --
+    "chromatogram": f'<svg {_S}><polyline points="2,20 5,20 7,16 9,18 11,6 13,18 15,14 17,17 19,20 22,20"/></svg>',
+    # -- Clock/RT --
+    "clock": f'<svg {_S}><circle cx="12" cy="12" r="9"/><polyline points="12,6 12,12 16,14"/></svg>',
+    # -- Leaf (tissue) --
+    "leaf": f'<svg {_S}><path d="M17 3c-6 0-13 4-13 13"/><path d="M17 3c0 6-4 13-13 13"/><line x1="4" y1="16" x2="17" y2="3"/></svg>',
+    # -- Gear/method --
+    "gear": f'<svg {_S}><circle cx="12" cy="12" r="3"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4.2 4.2l2.1 2.1m11.4 11.4l2.1 2.1M4.2 19.8l2.1-2.1m11.4-11.4l2.1-2.1"/></svg>',
+    # -- Nodes/correlation: connected dots --
+    "nodes": f'<svg {_S}><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="7" y1="8" x2="11" y2="16"/><line x1="17" y1="8" x2="13" y2="16"/></svg>',
+    # -- Puzzle/biclustering --
+    "puzzle": f'<svg {_S}><path d="M3 12h4a2 2 0 010 4H3V8h4a2 2 0 000-4H3V3h18v18H3z"/><path d="M12 3v4a2 2 0 004 0V3"/></svg>',
+    # -- Handshake/co-occurrence: two arrows meeting --
+    "handshake": f'<svg {_S}><path d="M3 12h7"/><path d="M14 12h7"/><polyline points="7,9 10,12 7,15"/><polyline points="17,9 14,12 17,15"/></svg>',
+    # -- No entry / mutual exclusivity --
+    "no_entry": f'<svg {_S}><circle cx="12" cy="12" r="9"/><line x1="5" y1="5" x2="19" y2="19"/></svg>',
+    # -- Tag/label --
+    "tag": f'<svg {_S}><path d="M11 2H2v9l10 10 9-9z"/><circle cx="6" cy="6" r="1.5" fill="#22c55e"/></svg>',
+    # -- Pin/map --
+    "pin": f'<svg {_S}><path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+    # -- Normalize: wavy to straight --
+    "normalize": f'<svg {_S}><path d="M2 8c2-3 4 3 6 0s4 3 6 0s4 3 6 0" opacity="0.4"/><line x1="2" y1="16" x2="20" y2="16"/><polyline points="17,13 20,16 17,19"/></svg>',
+    # -- Star: H3K79 validation spotlight --
+    "star": f'<svg {_S}><polygon points="12,2 15,9 22,9 16.5,14 18.5,21 12,17 5.5,21 7.5,14 2,9 9,9" fill="#22c55e" fill-opacity="0.15"/></svg>',
+    # -- Organism badge --
+    "organism": f'<svg {_S}><path d="M12 22c-4 0-8-2-8-6s8-14 8-14 8 10 8 14-4 6-8 6z"/><line x1="12" y1="8" x2="12" y2="22"/><path d="M8 14c2-1 6-1 8 0"/></svg>',
+    # -- Tissue badge --
+    "tissue": f'<svg {_S}><ellipse cx="12" cy="10" rx="8" ry="6"/><line x1="4" y1="10" x2="20" y2="10"/><path d="M8 4c0 3 8 3 8 0"/><path d="M8 16c0-3 8-3 8 0"/></svg>',
+    # -- Instrument badge --
+    "instrument": f'<svg {_S}><rect x="4" y="8" width="16" height="10" rx="2"/><line x1="8" y1="4" x2="8" y2="8"/><line x1="16" y1="4" x2="16" y2="8"/><line x1="8" y1="4" x2="16" y2="4"/><polyline points="7,13 10,11 13,14 17,11" stroke-width="1.5"/></svg>',
+    # -- Export/package box --
+    "export": f'<svg {_S}><path d="M12 3v12"/><polyline points="8,11 12,15 16,11"/><path d="M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4"/></svg>',
+}
+
+# ======================================================================
 # CONFIGURATION
 # ======================================================================
 
@@ -172,6 +275,7 @@ DEFAULTS = {
     },
     "PXD046034": {
         "dir": r"D:\epiprofile_data\PXD046034\MS1_MS2",
+        "phenodata": r"E:\EpiProfile_AT_PXD046034_raw\PXD046034\PXD046034\analysis_PXD046034\analysis\post_epiprofile\phenodata_PXD046034.tsv",
         "ndebug": "default", "dataset": "PXD046034",
     },
     "Ontogeny ndebug_0": {
@@ -200,7 +304,7 @@ EXP_INFO = {
         "summary": "Global histone PTM profiling across five abiotic stress conditions. "
                    "Identifies stress-specific changes in H3K27me3, H3K4me3, and H3K9ac marks. "
                    "Reveals coordinate regulation of methylation and acetylation under heat stress.",
-        "icon": "\U0001F33F",  # herb/plant
+        "icon": "plant",
     },
     "PXD014739": {
         "title": "Comprehensive histone modification atlas of Arabidopsis thaliana",
@@ -213,7 +317,7 @@ EXP_INFO = {
         "summary": "Large-scale atlas of histone H3 and H4 modifications across 7 Polycomb mutant lines. "
                    "Demonstrates PRC2 subunit-specific effects on H3K27me3 and crosstalk with H3K36me marks. "
                    "114 samples provide a comprehensive reference for Arabidopsis histone PTMs.",
-        "icon": "\U0001F9EC",  # dna
+        "icon": "dna",
     },
     "PXD046034": {
         "title": "Histone PTMs in FAS1/NAP1 chromatin assembly factor mutants",
@@ -226,7 +330,7 @@ EXP_INFO = {
         "summary": "Characterization of histone PTM changes in chromatin assembly factor mutants (FAS1, FAS2, NAP1). "
                    "Two experimental designs (3905/4105) reveal replication-dependent vs -independent histone deposition effects. "
                    "FAS mutants show altered H3K56ac and H3.1/H3.3 variant ratios.",
-        "icon": "\U0001F52C",  # microscope
+        "icon": "microscope",
     },
     "Ontogeny": {
         "title": "Developmental ontogeny of histone modifications in Arabidopsis",
@@ -239,7 +343,7 @@ EXP_INFO = {
         "summary": "Tracks histone PTM dynamics across four developmental stages of Arabidopsis. "
                    "Shows progressive changes in H3K27me3/H3K4me3 bivalent marks during the vegetative-to-reproductive transition. "
                    "Identifies developmentally regulated acetylation patterns.",
-        "icon": "\U0001F331",  # seedling
+        "icon": "seedling",
     },
 }
 
@@ -250,7 +354,7 @@ def _get_exp_info(exp_name):
             return EXP_INFO[key]
     return None
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.10")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.11")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -523,12 +627,13 @@ def parse_ratios_hierarchy(raw_df):
     }
 
 
-def load_experiment(base_dir, ratios_file=None, singleptm_dir=None):
+def load_experiment(base_dir, ratios_file=None, singleptm_dir=None, phenodata_path=None):
     """Load experiment data from a directory.
     Args:
         base_dir: Root directory for this experiment
         ratios_file: Specific histone_ratios filename (e.g. 'histone_ratios_ndebug0.xls')
         singleptm_dir: Subdirectory name for single PTMs (e.g. 'PXD014738_ndebug2_histone_layouts')
+        phenodata_path: Explicit absolute path to phenodata TSV file (overrides search)
     """
     data = {"base_dir": base_dir}
     layouts_dir = os.path.join(base_dir, "histone_layouts")
@@ -583,14 +688,22 @@ def load_experiment(base_dir, ratios_file=None, singleptm_dir=None):
             print(f"    WARN parsing ratios: {e}")
 
     # -- phenodata --
-    pheno_names = ["phenodata_arabidopsis_project.tsv","phenodata.tsv","phenodata_PXD046034.tsv",
-                   "phenodata_ontogeny.tsv"]
-    for fn in pheno_names:
-        fp = find_file(base_dir, fn)
-        if not fp: fp = os.path.join(ld, fn) if os.path.exists(os.path.join(ld, fn)) else None
-        if fp and os.path.exists(fp):
-            try: data["phenodata"] = pd.read_csv(fp, sep="\t"); break
-            except: pass
+    # If explicit path provided, use it directly
+    if phenodata_path and os.path.exists(phenodata_path):
+        try:
+            data["phenodata"] = pd.read_csv(phenodata_path, sep="\t")
+            print(f"    Phenodata: loaded from explicit path")
+        except Exception as pe:
+            print(f"    WARN phenodata: {pe}")
+    else:
+        pheno_names = ["phenodata_arabidopsis_project.tsv","phenodata.tsv","phenodata_PXD046034.tsv",
+                       "phenodata_ontogeny.tsv"]
+        for fn in pheno_names:
+            fp = find_file(base_dir, fn)
+            if not fp: fp = os.path.join(ld, fn) if os.path.exists(os.path.join(ld, fn)) else None
+            if fp and os.path.exists(fp):
+                try: data["phenodata"] = pd.read_csv(fp, sep="\t"); break
+                except: pass
 
     # -- metadata --
     ref = data.get("hptm", data.get("hpf"))
@@ -897,8 +1010,10 @@ for name, cfg in EXPERIMENTS.items():
     print(f"  {name}...")
     ratios_file = cfg.get("ratios") if isinstance(cfg, dict) else None
     singleptm_dir = cfg.get("singleptm_dir") if isinstance(cfg, dict) else None
+    phenodata_path = cfg.get("phenodata") if isinstance(cfg, dict) else None
     EXP_DATA[name] = load_experiment(base_dir, ratios_file=ratios_file,
-                                      singleptm_dir=singleptm_dir)
+                                      singleptm_dir=singleptm_dir,
+                                      phenodata_path=phenodata_path)
     d = EXP_DATA[name]
     # Store ndebug/dataset metadata for comparison features
     if isinstance(cfg, dict):
@@ -991,16 +1106,18 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                  "flexWrap":"wrap"}, children=[
                     html.Span("Histone PTM Quantification Dashboard", style={"color":"#94a3b8",
                               "fontSize":"15px","fontWeight":"400","letterSpacing":"0.5px"}),
-                    html.Span("v3.10", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
+                    html.Span("v3.11", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                               "padding":"3px 14px","borderRadius":"14px","fontSize":"12px","fontWeight":"700",
                               "color":"#0f1f13","boxShadow":"0 0 12px rgba(34,197,94,0.5), 0 0 4px rgba(34,197,94,0.3)"}),
                 ]),
                 html.Div(style={"display":"flex","gap":"8px","alignItems":"center","marginTop":"14px",
                                  "flexWrap":"wrap"}, children=[
-                    html.Span(t, style={"background":"rgba(255,255,255,0.06)","padding":"5px 16px",
+                    html.Span([_svg_icon(ic, 14, {"filter":"brightness(2)"}), f" {lbl}"],
+                              style={"background":"rgba(255,255,255,0.06)","padding":"5px 16px",
                               "borderRadius":"8px","fontSize":"13px","fontWeight":"600","color":"#d1d5db",
-                              "border":"1px solid rgba(255,255,255,0.08)","letterSpacing":"0.5px"})
-                    for t in ["\U0001F9EA hPTM", "\U0001F52C hPF", "\U0001F9EC hDP", "\U0001F4CA Areas", "\U000023F1 RT"]
+                              "border":"1px solid rgba(255,255,255,0.08)","letterSpacing":"0.5px",
+                              "display":"inline-flex","alignItems":"center","gap":"6px"})
+                    for ic, lbl in [("ptm","hPTM"), ("peptidoform","hPF"), ("dna","hDP"), ("chromatogram","Areas"), ("clock","RT")]
                 ]),
             ]),
             html.Div(style={"flex":"1","minWidth":"30px"}),
@@ -1008,8 +1125,9 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
             html.Div(style={"background":"rgba(255,255,255,0.06)","borderRadius":"16px","padding":"18px 24px",
                              "border":"1px solid rgba(255,255,255,0.10)","backdropFilter":"blur(20px)",
                              "boxShadow":"0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05)"}, children=[
-                html.Span("\U0001F9EA EXPERIMENT",style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
-                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
+                html.Span([_svg_icon("flask", 13, {"filter":"brightness(2)"}), " EXPERIMENT"],
+                          style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
+                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"flex","alignItems":"center","gap":"6px","marginBottom":"10px"}),
                 dcc.Dropdown(id="exp-sel", options=[{"label":k,"value":k} for k in EXP_DATA],
                              value=DEFAULT_EXP, clearable=False,
                              style={"width":"440px","fontSize":"14px","borderRadius":"10px"}),
@@ -1018,8 +1136,9 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
             html.Div(style={"background":"rgba(255,255,255,0.06)","borderRadius":"16px","padding":"18px 24px",
                              "border":"1px solid rgba(255,255,255,0.10)","backdropFilter":"blur(20px)",
                              "boxShadow":"0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05)"}, children=[
-                html.Span("\U0001F3A8 PALETTE",style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
-                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
+                html.Span([_svg_icon("palette", 13, {"filter":"brightness(2)"}), " PALETTE"],
+                          style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
+                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"flex","alignItems":"center","gap":"6px","marginBottom":"10px"}),
                 dcc.Dropdown(id="palette-sel",
                              options=[{"label":k,"value":k} for k in PALETTES],
                              value="EpiProfile (default)", clearable=False,
@@ -1029,15 +1148,20 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
         # Stats ribbon -- enhanced with icons
         html.Div(style={"display":"flex","gap":"20px","alignItems":"center","justifyContent":"center",
                          "padding":"14px 52px 16px","position":"relative","zIndex":"1","flexWrap":"wrap"}, children=[
-            html.Span(f"\U0001F4C1 {len(EXP_DATA)} Experiments", style={"color":"#86efac","fontSize":"13px","fontWeight":"600"}),
+            html.Span([_svg_icon("folder", 14, {"filter":"brightness(2)"}), f" {len(EXP_DATA)} Experiments"],
+                      style={"color":"#86efac","fontSize":"13px","fontWeight":"600","display":"inline-flex","alignItems":"center","gap":"5px"}),
             html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
-            html.Span("\U0001F4CA 13 Analysis Tabs", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span([_svg_icon("dashboard", 14, {"filter":"brightness(1.5)"}), " 14 Analysis Tabs"],
+                      style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500","display":"inline-flex","alignItems":"center","gap":"5px"}),
             html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
-            html.Span("\U0001F4C8 KW + MW + FDR", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span([_svg_icon("bar_chart", 14, {"filter":"brightness(1.5)"}), " KW + MW + FDR"],
+                      style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500","display":"inline-flex","alignItems":"center","gap":"5px"}),
             html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
-            html.Span("\U0001F4D0 PCA + Silhouette", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span([_svg_icon("pca", 14, {"filter":"brightness(1.5)"}), " PCA + Silhouette"],
+                      style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500","display":"inline-flex","alignItems":"center","gap":"5px"}),
             html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
-            html.Span("\U0001F50E ndebug Compare", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span([_svg_icon("spectra_compare", 14, {"filter":"brightness(1.5)"}), " ndebug Compare"],
+                      style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500","display":"inline-flex","alignItems":"center","gap":"5px"}),
         ]),
         # Upload area (collapsible, 3-slot) -- dark glass panel
         html.Details(style={"margin":"6px 52px 0","position":"relative","zIndex":"1",
@@ -1113,19 +1237,20 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
     # ---- Tabs with icons ----
     dcc.Tabs(id="tabs", value="tab-hpf", style={"backgroundColor":"#fff","borderBottom":"2px solid #d1d5db"},
              colors={"border":"transparent","primary":C["accent"],"background":"#fff"}, children=[
-        dcc.Tab(label="\U0001F9EA Peptidoforms", value="tab-hpf", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F3AF Single PTMs", value="tab-hptm", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F4CA QC Dashboard", value="tab-qc", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F4D0 PCA & Clustering", value="tab-pca", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F4C8 Statistics", value="tab-stats", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F517 UpSet / Co-occur", value="tab-upset", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F5FA Region Map", value="tab-region", style=ts, selected_style=tss),
-        dcc.Tab(label="\U00002696 Comparisons", value="tab-cmp", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F4CB Phenodata", value="tab-pheno", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F50D Sample Browser", value="tab-browse", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F4E6 Export to R", value="tab-export", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F50E ndebug Compare", value="tab-ndebug", style=ts, selected_style=tss),
-        dcc.Tab(label="\U0001F4DD Analysis Log", value="tab-log", style=ts, selected_style=tss),
+        dcc.Tab(label="Peptidoforms", value="tab-hpf", style=ts, selected_style=tss),
+        dcc.Tab(label="Single PTMs", value="tab-hptm", style=ts, selected_style=tss),
+        dcc.Tab(label="QC Dashboard", value="tab-qc", style=ts, selected_style=tss),
+        dcc.Tab(label="PCA & Clustering", value="tab-pca", style=ts, selected_style=tss),
+        dcc.Tab(label="Statistics", value="tab-stats", style=ts, selected_style=tss),
+        dcc.Tab(label="UpSet / Co-occur", value="tab-upset", style=ts, selected_style=tss),
+        dcc.Tab(label="Region Map", value="tab-region", style=ts, selected_style=tss),
+        dcc.Tab(label="H3K79 Validation", value="tab-k79", style=ts, selected_style={**tss, "borderTop":"3px solid #f59e0b","color":"#f59e0b"}),
+        dcc.Tab(label="Comparisons", value="tab-cmp", style=ts, selected_style=tss),
+        dcc.Tab(label="Phenodata", value="tab-pheno", style=ts, selected_style=tss),
+        dcc.Tab(label="Sample Browser", value="tab-browse", style=ts, selected_style=tss),
+        dcc.Tab(label="Export to R", value="tab-export", style=ts, selected_style=tss),
+        dcc.Tab(label="ndebug Compare", value="tab-ndebug", style=ts, selected_style=tss),
+        dcc.Tab(label="Analysis Log", value="tab-log", style=ts, selected_style=tss),
     ]),
     html.Div(id="tab-out", style={"padding":"30px 48px","maxWidth":"1800px","margin":"0 auto"}),
     # ---- Download component (hidden, triggered by export callbacks) ----
@@ -1138,7 +1263,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                          "flexWrap":"wrap","marginBottom":"10px"}, children=[
             html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"17px","color":"#fff",
                        "letterSpacing":"-0.5px"}),
-            html.Span("v3.10", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
+            html.Span("v3.11", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
                        "background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                        "padding":"3px 12px","borderRadius":"10px",
                        "boxShadow":"0 0 8px rgba(34,197,94,0.4)"}),
@@ -1202,7 +1327,7 @@ def _exp_info(exp):
                                            "borderBottom":"1px solid #e5e7eb"}, children=[
         html.Summary(style={"cursor":"pointer","fontSize":"15px","fontWeight":"700","color":"#0f1f13",
                              "listStyleType":"none","display":"flex","alignItems":"center","gap":"10px"}, children=[
-            html.Span(info.get("icon",""), style={"fontSize":"20px"}),
+            _svg_icon(info.get("icon",""), size=20),
             html.Span(info.get("title",""), style={"letterSpacing":"-0.2px"}),
             html.Span(info.get("pxd",""), style={"background":"#14532d","color":"#86efac","padding":"2px 10px",
                        "borderRadius":"8px","fontSize":"11px","fontWeight":"700","marginLeft":"4px"}),
@@ -1212,10 +1337,10 @@ def _exp_info(exp):
             # Left column: metadata
             html.Div([
                 html.Div(style={"display":"flex","flexWrap":"wrap","gap":"8px","marginBottom":"10px"}, children=[
-                    html.Span(["\U0001F9AB ", info.get("organism","")], style={**ics,"background":"#f0fdf4","color":"#166534","border":"1px solid #dcfce7"}),
-                    html.Span(["\U0001F3E5 ", info.get("tissue","")], style={**ics,"background":"#eff6ff","color":"#1e40af","border":"1px solid #dbeafe"}),
-                    html.Span(["\U0001F52C ", info.get("instrument","")], style={**ics,"background":"#faf5ff","color":"#6b21a8","border":"1px solid #f3e8ff"}),
-                    html.Span(["\U00002699 ", info.get("method","")], style={**ics,"background":"#fefce8","color":"#854d0e","border":"1px solid #fef9c3"}),
+                    html.Span([_svg_icon("organism", 14), " ", info.get("organism","")], style={**ics,"background":"#f0fdf4","color":"#166534","border":"1px solid #dcfce7"}),
+                    html.Span([_svg_icon("tissue", 14), " ", info.get("tissue","")], style={**ics,"background":"#eff6ff","color":"#1e40af","border":"1px solid #dbeafe"}),
+                    html.Span([_svg_icon("instrument", 14), " ", info.get("instrument","")], style={**ics,"background":"#faf5ff","color":"#6b21a8","border":"1px solid #f3e8ff"}),
+                    html.Span([_svg_icon("gear", 14), " ", info.get("method","")], style={**ics,"background":"#fefce8","color":"#854d0e","border":"1px solid #fef9c3"}),
                 ]),
                 html.Div(style={"display":"flex","flexWrap":"wrap","gap":"6px"}, children=[
                     html.Span(g, style={"background":"#f1f5f9","color":"#475569","padding":"3px 12px",
@@ -1387,6 +1512,7 @@ def _rt(tab, exp, pal):
         if tab == "tab-log": return tab_log(d, exp)
         if tab == "tab-export": return tab_export(d)
         if tab == "tab-ndebug": return tab_ndebug(exp)
+        if tab == "tab-k79": return tab_k79(d, exp)
         return {"tab-hpf":tab_hpf,"tab-hptm":tab_hptm,"tab-qc":tab_qc,
                 "tab-pca":tab_pca,"tab-stats":tab_stats,"tab-upset":tab_upset,
                 "tab-region":tab_region,"tab-cmp":tab_cmp,"tab-pheno":tab_pheno,
@@ -1507,9 +1633,13 @@ def _sc(label, val, color):
                              "letterSpacing":"0.8px","fontWeight":"600"})])
 
 def _st(text, sub="", icon=""):
-    title = f"{icon} {text}" if icon else text
-    ch = [html.H3(title,style={"color":"#0f1f13","marginTop":"0","marginBottom":"6px","fontSize":"20px","fontWeight":"800",
-                                "letterSpacing":"-0.3px"})]
+    h3_style = {"color":"#0f1f13","marginTop":"0","marginBottom":"6px","fontSize":"20px","fontWeight":"800",
+                "letterSpacing":"-0.3px","display":"flex","alignItems":"center","gap":"8px"}
+    h3_children = []
+    if icon and icon in ICONS:
+        h3_children.append(_svg_icon(icon, size=22))
+    h3_children.append(html.Span(text))
+    ch = [html.H3(h3_children, style=h3_style)]
     if sub: ch.append(html.P(sub,style={"color":C["muted"],"margin":"0 0 14px","fontSize":"13px"}))
     return html.Div(ch)
 
@@ -1538,7 +1668,7 @@ def tab_hpf(d):
     hpf = d.get("hpf", pd.DataFrame())
     hpf_meta = d.get("hpf_meta", pd.DataFrame())
     if hpf.empty:
-        return html.Div(style=CS, children=[_st("Peptidoforms (hPF)", icon="\U0001F9EA"),
+        return html.Div(style=CS, children=[_st("Peptidoforms (hPF)", icon="peptidoform"),
             html.P("No histone_ratios.xls found.",style={"color":C["muted"]})])
 
     meta = d["metadata"]
@@ -1702,16 +1832,16 @@ def update_hpf(hist, reg, grp, htype, min_val, topn, exp):
         ]),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"2","minWidth":"400px"}, children=[
-                _st("Top Variable Peptidoforms", icon="\U0001F525"), dcc.Graph(figure=vf)]),
+                _st("Top Variable Peptidoforms", icon="fire"), dcc.Graph(figure=vf)]),
             html.Div(style={**CS,"flex":"1","minWidth":"300px"}, children=[
                 _st(f"Distribution: {top}"), dcc.Graph(figure=bf)]),
         ]),
         html.Div(style=CS, children=[
-            _st("Faceted Violin: Top Variable hPF by Group","Top 6 most variable peptidoforms", icon="\U0001F3BB"),
+            _st("Faceted Violin: Top Variable hPF by Group","Top 6 most variable peptidoforms", icon="violin"),
             dcc.Graph(figure=viol_fig),
         ]),
         html.Div(style=CS, children=[
-            _st("Filtered Data Table","Editable | Sortable | Filterable | Export CSV", icon="\U0001F4CB"),
+            _st("Filtered Data Table","Editable | Sortable | Filterable | Export CSV", icon="table"),
             make_table(df, "hpf-table"),
         ]),
     ])
@@ -1809,9 +1939,9 @@ def tab_hptm(d):
                                "cursor":"pointer","fontSize":"13px"})]),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"450px"}, children=[
-                _st("Clustered Heatmap","Ward linkage | hPTM ratios | Group color bar", icon="\U0001F3AF"), dcc.Graph(figure=hm)]),
+                _st("Clustered Heatmap","Ward linkage | hPTM ratios | Group color bar", icon="ptm"), dcc.Graph(figure=hm)]),
             html.Div(style={**CS,"flex":"1","minWidth":"450px"}, children=[
-                _st("Z-score Heatmap","Row-wise normalization | Group color bar", icon="\U0001F4CA"), dcc.Graph(figure=zhm)]),
+                _st("Z-score Heatmap","Row-wise normalization | Group color bar", icon="bar_chart"), dcc.Graph(figure=zhm)]),
         ]),
         html.Div(style=CS, children=[
             _st("Key hPTM Faceted Violins","Faceted by PTM, colored by group"), dcc.Graph(figure=vf)]),
@@ -1893,7 +2023,7 @@ def tab_qc(d):
             _sc("Clean Runs",str(nc),C["green"]),
             _sc("Warnings",str(nw),C["red"] if nw>0 else C["green"]),
         ]),
-        html.Div(style=CS, children=[_st("Missingness Heatmap","Green=detected | Red=missing", icon="\U0001F7E2"), dcc.Graph(figure=mhm)]),
+        html.Div(style=CS, children=[_st("Missingness Heatmap","Green=detected | Red=missing", icon="qc"), dcc.Graph(figure=mhm)]),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=mb)]),
             html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=ch)]),
@@ -1901,7 +2031,7 @@ def tab_qc(d):
     ]
     if area_children:
         children.append(html.Div([
-            _st("Area Normalization", "Before vs After Quantile Normalization | log2(MS1 intensity)", icon="\U0001F4C9"),
+            _st("Area Normalization", "Before vs After Quantile Normalization | log2(MS1 intensity)", icon="normalize"),
             html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=area_children),
         ]))
     return html.Div(children)
@@ -2221,7 +2351,7 @@ def _pca_content(source, exp, pal):
             _sc("Var PC1+PC2", f"{ev[0]+ev[1]:.1f}%", C["warn"]),
             _sc("Data", src_label, "#6b7280"),
         ]),
-        _st("Principal Component Analysis", f"Score plot with 95% confidence ellipses (chi-squared) | {src_label}", icon="\U0001F4D0"),
+        _st("Principal Component Analysis", f"Score plot with 95% confidence ellipses (chi-squared) | {src_label}", icon="pca"),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"520px"}, children=[dcc.Graph(figure=fig1)]),
             html.Div(style={**CS,"flex":"1","minWidth":"520px"}, children=[dcc.Graph(figure=bfig)]),
@@ -2236,18 +2366,18 @@ def _pca_content(source, exp, pal):
 
     # Clustering section
     children.append(_st("Sample Clustering & Silhouette Analysis",
-                         f"Optimal K selected by silhouette score | Ward linkage dendrogram", icon="\U0001F4CA"))
+                         f"Optimal K selected by silhouette score | Ward linkage dendrogram", icon="bar_chart"))
     children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
         html.Div(style={**CS,"flex":"1","minWidth":"450px"}, children=[dcc.Graph(figure=pam_fig)]),
         html.Div(style={**CS,"flex":"1","minWidth":"350px"}, children=[dcc.Graph(figure=sil_fig)]),
     ]))
     children.append(html.Div(style={**CS,"maxWidth":"500px"}, children=[dcc.Graph(figure=sk_fig)]))
 
-    children.append(_st("Feature Correlation", icon="\U0001F517"))
+    children.append(_st("Feature Correlation", icon="nodes"))
     children.append(html.Div(style=CS, children=[dcc.Graph(figure=chm)]))
 
     children.append(_st("Feature Clustering",
-                         f"Ward dendrogram + K-Means (K={k_vals}) group means + Spectral biclustering", icon="\U0001F9E9"))
+                         f"Ward dendrogram + K-Means (K={k_vals}) group means + Spectral biclustering", icon="puzzle"))
     children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
         html.Div(style={**CS,"flex":"1","minWidth":"420px"}, children=[dcc.Graph(figure=feat_dfig)]),
         html.Div(style={**CS,"flex":"1","minWidth":"380px"}, children=[dcc.Graph(figure=km_hm)]),
@@ -2292,8 +2422,9 @@ def tab_stats(d):
     if df is None or meta.empty:
         return html.Div(style=CS, children=[html.P("No data.")])
 
-    # Check if Design column exists (for stratified analysis)
+    # Check if Design / Tissue columns exist (for stratified analysis)
     designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
+    tissues = sorted(meta["Tissue"].unique()) if "Tissue" in meta.columns and meta["Tissue"].nunique() > 1 else []
 
     # Data source selector
     has_areas = "areas_norm" in d and d["areas_norm"] is not None
@@ -2316,6 +2447,14 @@ def tab_stats(d):
                 value=str(designs[0]), clearable=False, style=DS)]))
     else:
         filter_children.append(html.Div(dcc.Store(id="stats-design", data="none")))
+    if tissues:
+        filter_children.append(html.Div(style={"flex":"1","minWidth":"180px"}, children=[
+            _lbl("Tissue"),
+            dcc.Dropdown(id="stats-tissue",
+                options=[{"label":"All tissues","value":"All"}]+[{"label":t,"value":t} for t in tissues],
+                value="All", clearable=False, style=DS)]))
+    else:
+        filter_children.append(html.Div(dcc.Store(id="stats-tissue", data="All")))
 
     filter_children.extend([
         html.Div(style={"flex":"1","minWidth":"160px"}, children=[
@@ -2350,10 +2489,11 @@ def tab_stats(d):
 
 
 @callback(Output("stats-out","children"),
-          Input("stats-source","value"), Input("stats-design","value"), Input("stats-show","value"),
+          Input("stats-source","value"), Input("stats-design","value"), Input("stats-tissue","value"),
+          Input("stats-show","value"),
           Input("stats-classify","value"), Input("stats-fdr","value"),
           Input("cur-exp","data"), prevent_initial_call=True)
-def _stats_filtered(source, design, show, classify, fdr_log, exp):
+def _stats_filtered(source, design, tissue, show, classify, fdr_log, exp):
     t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
@@ -2367,6 +2507,12 @@ def _stats_filtered(source, design, show, classify, fdr_log, exp):
     # Filter to design if applicable
     if design and design not in ("All", "none") and "Design" in meta.columns:
         meta = meta[meta["Design"].astype(str) == str(design)].copy()
+        samps = meta["Sample"].tolist()
+        cols = [c for c in df.columns if c in samps]; df = df[cols]
+
+    # Filter to tissue if applicable
+    if tissue and tissue != "All" and "Tissue" in meta.columns:
+        meta = meta[meta["Tissue"] == tissue].copy()
         samps = meta["Sample"].tolist()
         cols = [c for c in df.columns if c in samps]; df = df[cols]
 
@@ -2483,7 +2629,7 @@ def _stats_filtered(source, design, show, classify, fdr_log, exp):
         dcc.Graph(figure=sbf)]))
 
     children.append(html.Div(style=CS, children=[
-        _st("Statistical Results", f"Kruskal-Wallis + BH FDR | {show} | Editable | Export CSV", icon="\U0001F4C8"),
+        _st("Statistical Results", f"Kruskal-Wallis + BH FDR | {show} | Editable | Export CSV", icon="bar_chart"),
         make_table(display_res, "stats-table")]))
 
     return html.Div(children)
@@ -2617,7 +2763,7 @@ def tab_upset(d):
                 _st("Peptidoform-level Co-occurrence",
                     f"{len(pair_sample_counts)} unique PTM pairs from {len(combos)} combinatorial peptidoforms | "
                     f"Co-detection = both marks present (ratio > {DET_THRESH}) in the same sample",
-                    icon="\U0001F517"),
+                    icon="nodes"),
                 dcc.Graph(figure=uf),
                 html.Details([
                     html.Summary("Show pair details table", style={"cursor":"pointer","color":C["accent"],
@@ -2736,7 +2882,7 @@ def tab_upset(d):
                     "Fisher exact test with BH-FDR correction | "
                     "Positive log2(OR) = co-occurring | Negative = mutually exclusive | "
                     f"Detection threshold: ratio > {DET_THRESH}",
-                    icon="\U0001F9EC"),
+                    icon="dna"),
             ]))
             children.append(summary)
             children.append(html.Div(style=CS, children=[dcc.Graph(figure=me_hm)]))
@@ -2750,7 +2896,7 @@ def tab_upset(d):
                 co_table = html.Div(style=CS, children=[
                     _st("Significantly Co-occurring Pairs",
                         f"{len(sig_co)} pairs | log2(OR) > 1, FDR < 0.05, co-detected in >= 2 samples",
-                        icon="\U0001F91D"),
+                        icon="handshake"),
                     make_table(co_show, "cooccur-sig-table")])
             if not sig_ex.empty:
                 ex_show = sig_ex[["PTM_A","PTM_B","Both","A_only","B_only","Jaccard","Log2_OR","FDR"]].head(25).copy()
@@ -2758,7 +2904,7 @@ def tab_upset(d):
                 ex_table = html.Div(style=CS, children=[
                     _st("Significantly Mutually Exclusive Pairs",
                         f"{len(sig_ex)} pairs | log2(OR) < -1, FDR < 0.05",
-                        icon="\U0001F6AB"),
+                        icon="no_entry"),
                     make_table(ex_show, "excl-sig-table")])
 
             children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
@@ -2840,7 +2986,7 @@ def tab_upset(d):
                 _st("PTM Detection Patterns",
                     "A PTM is 'detected' in a group if ratio > threshold in >= 50% of group samples | "
                     "Ubiquitous = present in all groups | Group-specific = unique to one group",
-                    icon="\U0001F50E"),
+                    icon="spectra_compare"),
                 det_summary,
                 dcc.Graph(figure=pf),
             ]))
@@ -2868,7 +3014,7 @@ def tab_upset(d):
                 children.append(html.Div(style=CS, children=[
                     _st("Group-Specific PTMs",
                         "PTMs detected exclusively in one experimental group (>= 50% of samples)",
-                        icon="\U0001F3F7"),
+                        icon="tag"),
                     make_table(spec_df, "group-specific-table"),
                 ]))
 
@@ -2911,7 +3057,7 @@ def tab_upset(d):
             _st("Modification Complexity",
                 "How many peptidoforms are detected per sample? | "
                 "Single = one PTM | Combo = multiple PTMs on same peptide",
-                icon="\U0001F9EC"),
+                icon="dna"),
             html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
                 html.Div(style={"flex":"1.2","minWidth":"500px"}, children=[dcc.Graph(figure=cf)]),
                 html.Div(style={"flex":"0.8","minWidth":"350px"}, children=[dcc.Graph(figure=bx)]),
@@ -2919,7 +3065,7 @@ def tab_upset(d):
         ]))
     else:
         children.append(html.Div(style=CS, children=[
-            _st("Modification Complexity", icon="\U0001F9EC"),
+            _st("Modification Complexity", icon="dna"),
             dcc.Graph(figure=cf)]))
 
     return html.Div(children)
@@ -3091,7 +3237,7 @@ def tab_region(d):
 
     children.append(_st("Peptide Coverage Map",
         "Histone sequence tracks showing peptide positions and modification sites (red triangles)",
-        icon="\U0001F9EC"))
+        icon="dna"))
 
     # ============================================================
     # SECTION 2: PTM Landscape - modification density along sequence
@@ -3156,7 +3302,7 @@ def tab_region(d):
             _st("PTM Landscape",
                 "Bubble size = number of peptidoforms carrying that site | "
                 "Y-axis = number of distinct modification types (me1, me2, ac, ...)",
-                icon="\U0001F3AF"),
+                icon="ptm"),
             dcc.Graph(figure=landscape),
         ]))
 
@@ -3217,7 +3363,7 @@ def tab_region(d):
 
     children.append(_st("Region Complexity",
         "Lollipop plots: peptidoform count and unique modification marks per derivatized peptide region",
-        icon="\U0001F4CD"))
+        icon="pin"))
     children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
         html.Div(style={**CS, "flex": "1", "minWidth": "500px"}, children=[dcc.Graph(figure=lf)]),
         html.Div(style={**CS, "flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=uf)]),
@@ -3261,7 +3407,7 @@ def tab_region(d):
 
     children.append(_st("Composition & Group Patterns",
         "Stacked bar: modification types per region | Heatmap: mean ratios across groups",
-        icon="\U0001F4CA"))
+        icon="bar_chart"))
     children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
         html.Div(style={**CS, "flex": "1", "minWidth": "500px"}, children=[dcc.Graph(figure=sbf)]),
         html.Div(style={**CS, "flex": "1", "minWidth": "500px"}, children=[dcc.Graph(figure=rghm)]),
@@ -3288,7 +3434,7 @@ def tab_region(d):
         rbf.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
 
         children.append(html.Div(style=CS, children=[
-            _st("Top Regions by Group", "Faceted box plots for the 6 most diverse regions", icon="\U0001F5FA"),
+            _st("Top Regions by Group", "Faceted box plots for the 6 most diverse regions", icon="region"),
             dcc.Graph(figure=rbf),
         ]))
 
@@ -3360,7 +3506,7 @@ def tab_region(d):
             _st("Sequence Context",
                 "Peptide sequences with modified residues highlighted | "
                 "Red underlined = modified | Blue = modifiable (K/R/S/T)",
-                icon="\U0001F9EC"),
+                icon="dna"),
             html.Div(style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}, children=seq_cards),
         ]))
 
@@ -3375,6 +3521,363 @@ def tab_region(d):
         _st("Region Summary Table", "Peptide regions with sequence context, modification counts and PTM lists"),
         make_table(table_df, "region-table"),
     ]))
+
+    return html.Div(children)
+
+
+# ======================================================================
+# TAB: H3K79 VALIDATION -- Star Section
+# ======================================================================
+
+def tab_k79(d, exp_name):
+    """H3K79 validation: dedicated section for H3 73-83 region and K79 mods.
+    Aggregates evidence from ratios, areas, RT, PSMs, and per-sample detail files."""
+    children = []
+    meta = d.get("metadata", pd.DataFrame())
+    if meta.empty:
+        return html.Div(style=CS, children=[_st("H3K79 Validation", "No metadata available.", icon="star")])
+    groups = sorted(meta["Group"].unique())
+    hpf = d.get("hpf", pd.DataFrame())
+    hptm = d.get("hptm", pd.DataFrame())
+    areas = d.get("areas_norm", d.get("areas_log2"))
+    rt_df = d.get("rt", pd.DataFrame())
+    psm = d.get("all_psm", pd.DataFrame())
+    ld = d.get("layouts_dir", "")
+
+    # -- K79 features --
+    k79_feats = [f for f in hpf.index if "K79" in str(f)] if not hpf.empty else []
+    k79_hptm = [f for f in hptm.index if "K79" in str(f)] if not hptm.empty else []
+    region_feats = [f for f in hpf.index if "73_83" in str(f)] if not hpf.empty else []
+    unmod_73 = [f for f in region_feats if "unmod" in str(f).lower() or "K79" not in str(f)]
+    all_73_83 = sorted(set(region_feats))
+
+    # ---- HEADER with star icon + golden accent ----
+    children.append(html.Div(style={**CS, "border":"2px solid #f59e0b","background":"linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%)",
+                                     "borderRadius":"12px","padding":"24px"}, children=[
+        html.Div(style={"display":"flex","alignItems":"center","gap":"14px"}, children=[
+            _svg_icon("star", 36),
+            html.Div([
+                html.H2("H3K79 Validation Panel", style={"margin":"0","fontSize":"26px","fontWeight":"800",
+                         "color":"#92400e","letterSpacing":"-0.5px"}),
+                html.P("Comprehensive evidence evaluation for H3 73-83 region (EIAQDFKTDLR) and K79 modifications",
+                        style={"margin":"4px 0 0","color":"#a16207","fontSize":"14px"}),
+            ]),
+        ]),
+    ]))
+
+    if not k79_feats and not k79_hptm:
+        children.append(html.Div(style=CS, children=[
+            html.P("No H3K79 features found in this experiment.", style={"color":C["red"],"fontSize":"15px","fontWeight":"600"})]))
+        return html.Div(children)
+
+    # ---- 1. SUMMARY CARDS ----
+    n_k79_hpf = len(k79_feats)
+    n_k79_hptm = len(k79_hptm)
+    n_total_73_83 = len(all_73_83)
+    # Compute mean detection (non-zero ratio) across samples
+    if not hpf.empty and k79_feats:
+        k79_df = hpf.loc[k79_feats]
+        det_rate = (k79_df > 0.001).mean(axis=1).mean() * 100
+    else:
+        det_rate = 0
+    # Mean ratio
+    mean_ratio = hpf.loc[k79_feats].mean(axis=1).mean() if k79_feats and not hpf.empty else 0
+
+    cards = [
+        _sc("K79 Peptidoforms", n_k79_hpf, "#f59e0b"),
+        _sc("K79 Single PTMs", n_k79_hptm, "#d97706"),
+        _sc("Total H3 73-83 Features", n_total_73_83, "#92400e"),
+        _sc("Mean Detection %", f"{det_rate:.1f}%", "#22c55e" if det_rate > 50 else "#ef4444"),
+        _sc("Mean Ratio", f"{mean_ratio:.4f}", "#0891b2"),
+    ]
+    children.append(html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"16px"}, children=cards))
+
+    # ---- 2. K79 RATIOS HEATMAP (hPF level) ----
+    if k79_feats and not hpf.empty:
+        k79_df = hpf.loc[k79_feats].copy()
+        # Sort columns by group
+        sample_order = meta.sort_values("Group")["Sample"].tolist()
+        k79_cols = [c for c in sample_order if c in k79_df.columns]
+        k79_ordered = k79_df[k79_cols]
+        grp_colors = [meta.set_index("Sample").loc[s,"Group"] if s in meta["Sample"].values else "" for s in k79_cols]
+
+        fig_hm = go.Figure(data=go.Heatmap(
+            z=k79_ordered.values, x=k79_cols, y=k79_ordered.index.tolist(),
+            colorscale=[[0,"#fefce8"],[0.3,"#fde047"],[0.6,"#f59e0b"],[1.0,"#92400e"]],
+            colorbar=dict(title="Ratio")))
+        fig_hm.update_layout(**PUB.layout.to_plotly_json(), title="K79 Modification Ratios per Sample",
+                             height=200 + 40*len(k79_feats), xaxis_tickangle=-45)
+        children.append(html.Div(style=CS, children=[
+            _st("K79 Peptidoform Ratios", "Heatmap of K79me1/me2/me3/ac ratios across all samples | golden colorscale", icon="heatmap"),
+            dcc.Graph(figure=fig_hm),
+        ]))
+
+    # ---- 3. K79 SINGLE PTM RATIOS (hPTM level) ----
+    if k79_hptm and not hptm.empty:
+        k79_ptm_df = hptm.loc[k79_hptm]
+        # Box plot by group
+        rows_box = []
+        for ptm in k79_hptm:
+            for g in groups:
+                samps = meta[meta["Group"]==g]["Sample"].tolist()
+                vals = k79_ptm_df.loc[ptm, [s for s in samps if s in k79_ptm_df.columns]].dropna()
+                for v in vals:
+                    if v > 0:
+                        rows_box.append({"PTM":ptm, "Group":g, "Ratio":v})
+        if rows_box:
+            box_df = pd.DataFrame(rows_box)
+            fig_box = px.box(box_df, x="PTM", y="Ratio", color="Group", points="all",
+                             color_discrete_sequence=GC, template="plotly_white")
+            fig_box.update_layout(**PUB.layout.to_plotly_json(), title="H3K79 Single PTM Abundances by Group",
+                                  height=450, legend=dict(font=dict(size=11)))
+            children.append(html.Div(style=CS, children=[
+                _st("K79 Single PTM Abundances", "Box plots showing ratio distribution per K79 modification across groups", icon="bar_chart"),
+                dcc.Graph(figure=fig_box),
+            ]))
+
+    # ---- 4. AREAS (MS1 intensity) for K79 features ----
+    if areas is not None and not areas.empty and k79_feats:
+        k79_areas = areas.loc[[f for f in k79_feats if f in areas.index]]
+        if not k79_areas.empty:
+            rows_area = []
+            for feat in k79_areas.index:
+                for g in groups:
+                    samps = meta[meta["Group"]==g]["Sample"].tolist()
+                    vals = k79_areas.loc[feat, [s for s in samps if s in k79_areas.columns]].dropna()
+                    for v in vals:
+                        if np.isfinite(v):
+                            rows_area.append({"Feature":feat, "Group":g, "log2_Area":v})
+            if rows_area:
+                area_df = pd.DataFrame(rows_area)
+                fig_area = px.violin(area_df, x="Feature", y="log2_Area", color="Group", box=True,
+                                     color_discrete_sequence=GC, template="plotly_white")
+                fig_area.update_layout(**PUB.layout.to_plotly_json(), title="K79 Feature Intensities (log2 normalized)",
+                                       height=450)
+                children.append(html.Div(style=CS, children=[
+                    _st("K79 MS1 Intensities", "Violin plots of log2 quantile-normalized areas | evidence for detection strength", icon="chromatogram"),
+                    dcc.Graph(figure=fig_area),
+                ]))
+
+    # ---- 5. RETENTION TIME CONSISTENCY ----
+    if rt_df is not None and not rt_df.empty and k79_feats:
+        k79_rt = rt_df.loc[[f for f in k79_feats if f in rt_df.index]]
+        if not k79_rt.empty:
+            rows_rt = []
+            for feat in k79_rt.index:
+                for g in groups:
+                    samps = meta[meta["Group"]==g]["Sample"].tolist()
+                    vals = k79_rt.loc[feat, [s for s in samps if s in k79_rt.columns]].dropna()
+                    for v in vals:
+                        if v > 0:
+                            rows_rt.append({"Feature":feat, "Group":g, "RT_min":v})
+            if rows_rt:
+                rt_box = pd.DataFrame(rows_rt)
+                fig_rt = px.box(rt_box, x="Feature", y="RT_min", color="Group", points="all",
+                                color_discrete_sequence=GC, template="plotly_white")
+                fig_rt.update_layout(**PUB.layout.to_plotly_json(), title="K79 Retention Times (minutes)",
+                                     height=400, yaxis_title="RT (min)")
+                children.append(html.Div(style=CS, children=[
+                    _st("K79 Retention Time Consistency", "RT spread across samples validates chromatographic reproducibility", icon="clock"),
+                    dcc.Graph(figure=fig_rt),
+                ]))
+
+    # ---- 6. PSM EVIDENCE ----
+    if not psm.empty:
+        # Filter PSMs for H3_73_83 peptide: EIAQDFKTDLR
+        seq_col = [c for c in psm.columns if "sequence" in c.lower()]
+        if seq_col:
+            seq_c = seq_col[0]
+            k79_psm = psm[psm[seq_c].str.contains("EIAQDFKTDLR", na=False, case=False)]
+            if not k79_psm.empty:
+                # Also filter by K79 modifications
+                mod_cols = [c for c in psm.columns if "modif" in c.lower()]
+                has_k79_mod = k79_psm.copy()
+                if mod_cols:
+                    mod_c = mod_cols[0]
+                    has_k79_mod = k79_psm[k79_psm[mod_c].str.contains("me|ac", na=False, case=False)]
+
+                n_total_psm = len(k79_psm)
+                n_k79_mod_psm = len(has_k79_mod)
+
+                children.append(html.Div(style=CS, children=[
+                    _st("PSM Evidence for H3 73-83",
+                         f"{n_total_psm:,} PSMs for EIAQDFKTDLR | {n_k79_mod_psm:,} with K79 modifications",
+                         icon="search"),
+                ]))
+
+                # PSM quality: ppm distribution
+                ppm_col = [c for c in k79_psm.columns if "ppm" in c.lower()]
+                if ppm_col:
+                    ppm_c = ppm_col[0]
+                    ppm_vals = k79_psm[ppm_c].dropna()
+                    if len(ppm_vals) > 0:
+                        fig_ppm = go.Figure()
+                        fig_ppm.add_trace(go.Histogram(x=ppm_vals, nbinsx=50, marker_color="#f59e0b", name="All EIAQDFKTDLR"))
+                        if not has_k79_mod.empty and ppm_c in has_k79_mod.columns:
+                            mod_ppm = has_k79_mod[ppm_c].dropna()
+                            if len(mod_ppm) > 0:
+                                fig_ppm.add_trace(go.Histogram(x=mod_ppm, nbinsx=50, marker_color="#22c55e",
+                                                               name="K79 modified", opacity=0.7))
+                        fig_ppm.update_layout(**PUB.layout.to_plotly_json(), title="Mass Accuracy (ppm) for H3 73-83 PSMs",
+                                              xaxis_title="ppm error", yaxis_title="Count", height=350, barmode="overlay")
+                        children.append(html.Div(style=CS, children=[dcc.Graph(figure=fig_ppm)]))
+
+                # RT from PSMs
+                rt_col = [c for c in k79_psm.columns if "retention" in c.lower() or "rt" == c.lower()]
+                if rt_col:
+                    rt_c = rt_col[0]
+
+                # Charge state distribution
+                z_col = [c for c in k79_psm.columns if "charge" in c.lower()]
+                if z_col:
+                    z_c = z_col[0]
+                    z_counts = k79_psm[z_c].value_counts().sort_index()
+                    fig_z = go.Figure(go.Bar(x=[f"+{int(z)}" for z in z_counts.index],
+                                             y=z_counts.values, marker_color="#f59e0b"))
+                    fig_z.update_layout(**PUB.layout.to_plotly_json(), title="Charge State Distribution (H3 73-83 PSMs)",
+                                        xaxis_title="Charge", yaxis_title="PSM count", height=300)
+                    children.append(html.Div(style=CS, children=[dcc.Graph(figure=fig_z)]))
+
+                # Modification breakdown
+                if mod_cols:
+                    mod_c = mod_cols[0]
+                    mod_counts = k79_psm[mod_c].value_counts().head(15)
+                    if len(mod_counts) > 0:
+                        fig_mc = go.Figure(go.Bar(
+                            y=mod_counts.index.tolist(), x=mod_counts.values,
+                            orientation="h", marker_color=["#f59e0b" if "79" in str(m) else "#d1d5db" for m in mod_counts.index]))
+                        fig_mc.update_layout(**PUB.layout.to_plotly_json(),
+                                             title="Top Modification Combinations in H3 73-83 PSMs",
+                                             height=max(250, 30*len(mod_counts)),
+                                             margin=dict(l=max(200, max(len(str(m)) for m in mod_counts.index)*7)))
+                        children.append(html.Div(style=CS, children=[
+                            _st("Modification Combinations", "K79-containing modifications highlighted in gold", icon="tag"),
+                            dcc.Graph(figure=fig_mc),
+                        ]))
+
+                # PSM table (top 50)
+                show_cols = [c for c in k79_psm.columns if c != "_sample_folder"][:8]
+                psm_show = k79_psm[show_cols].head(50).copy()
+                children.append(html.Div(style=CS, children=[
+                    _st("PSM Detail Table", f"Top 50 of {n_total_psm:,} PSMs for EIAQDFKTDLR peptide", icon="table"),
+                    make_table(psm_show, "k79-psm-table"),
+                ]))
+
+    # ---- 7. PER-SAMPLE REGION DETAIL (charge state areas from H3_07_73_83.xls) ----
+    folders = d.get("sample_folders", [])
+    if ld and folders:
+        detail_rows = []
+        for fld in folders:
+            # Try common naming patterns for H3_73_83 detail file
+            for fn in ["H3_07_73_83.xls", "H3_73_83.xls"]:
+                fp = os.path.join(ld, fld, "detail", fn)
+                if os.path.exists(fp):
+                    try:
+                        raw = pd.read_csv(fp, sep="\t", header=None)
+                        # Parse: first column has modification names, rest are charge states
+                        # Find [ratio] and [area] blocks
+                        block = None
+                        for i, row in raw.iterrows():
+                            val0 = str(row.iloc[0]).strip().lower()
+                            if val0 == "[ratio]": block = "ratio"; continue
+                            if val0 == "[area]": block = "area"; continue
+                            if val0 == "[rt]": block = "rt"; continue
+                            if val0.startswith("[") or val0 == "": continue
+                            if block == "ratio" and "K79" in str(row.iloc[0]):
+                                mod_name = str(row.iloc[0]).strip()
+                                vals = row.iloc[1:].astype(float, errors="ignore")
+                                total = vals.sum() if not vals.isna().all() else 0
+                                detail_rows.append({"Sample_Folder": fld, "Modification": mod_name,
+                                                    "Block": "ratio", "Total": total})
+                            if block == "area" and "K79" in str(row.iloc[0]):
+                                mod_name = str(row.iloc[0]).strip()
+                                vals = pd.to_numeric(row.iloc[1:], errors="coerce")
+                                total = vals.sum() if not vals.isna().all() else 0
+                                detail_rows.append({"Sample_Folder": fld, "Modification": mod_name,
+                                                    "Block": "area", "Total": total})
+                    except:
+                        pass
+                    break
+        if detail_rows:
+            det_df = pd.DataFrame(detail_rows)
+            # Ratio summary from detail files
+            ratio_det = det_df[det_df["Block"] == "ratio"]
+            if not ratio_det.empty:
+                fig_det = px.box(ratio_det, x="Modification", y="Total", color="Modification",
+                                 color_discrete_sequence=["#f59e0b","#d97706","#92400e","#22c55e"],
+                                 template="plotly_white", points="all")
+                fig_det.update_layout(**PUB.layout.to_plotly_json(),
+                                      title="Per-Sample K79 Ratios (from detail files)",
+                                      height=400, showlegend=False)
+                children.append(html.Div(style=CS, children=[
+                    _st("Per-Sample Detail Ratios", f"Extracted from {len(folders)} sample detail files | charge-state aggregated",
+                        icon="search"),
+                    dcc.Graph(figure=fig_det),
+                ]))
+            # Area summary from detail files
+            area_det = det_df[det_df["Block"] == "area"]
+            if not area_det.empty:
+                area_det_log = area_det.copy()
+                area_det_log["log2_Area"] = np.log2(area_det_log["Total"].clip(lower=1))
+                fig_adet = px.box(area_det_log, x="Modification", y="log2_Area", color="Modification",
+                                  color_discrete_sequence=["#f59e0b","#d97706","#92400e","#22c55e"],
+                                  template="plotly_white", points="all")
+                fig_adet.update_layout(**PUB.layout.to_plotly_json(),
+                                       title="Per-Sample K79 MS1 Areas (from detail files)",
+                                       height=400, showlegend=False)
+                children.append(html.Div(style=CS, children=[
+                    _st("Per-Sample Detail Areas", "log2(MS1 area) from per-sample region detail files", icon="chromatogram"),
+                    dcc.Graph(figure=fig_adet),
+                ]))
+
+    # ---- 8. GLOBAL COMPARISON: K79 vs OTHER MODIFICATIONS ----
+    if not hpf.empty and k79_feats:
+        # Compare K79 detection rate vs all other features
+        all_det_rates = (hpf > 0.001).mean(axis=1) * 100
+        k79_rates = all_det_rates.loc[k79_feats]
+        other_rates = all_det_rates.drop(k79_feats, errors="ignore")
+        fig_comp = go.Figure()
+        fig_comp.add_trace(go.Histogram(x=other_rates, nbinsx=30, name="Other features",
+                                         marker_color="#d1d5db", opacity=0.7))
+        for feat, rate in k79_rates.items():
+            fig_comp.add_vline(x=rate, line_dash="dash", line_color="#f59e0b", line_width=2,
+                               annotation_text=str(feat).split()[-1], annotation_position="top")
+        fig_comp.update_layout(**PUB.layout.to_plotly_json(),
+                               title="K79 Detection Rate vs All Other Features",
+                               xaxis_title="Detection Rate (%)", yaxis_title="Count",
+                               height=350)
+        children.append(html.Div(style=CS, children=[
+            _st("K79 in Global Context", "Vertical lines show K79 features against the distribution of all features", icon="spectra_compare"),
+            dcc.Graph(figure=fig_comp),
+        ]))
+
+    # ---- 9. VALIDATION SUMMARY TABLE ----
+    summary_rows = []
+    for feat in all_73_83:
+        row = {"Feature": feat, "Type": "K79 mod" if "K79" in feat else "Other"}
+        if not hpf.empty and feat in hpf.index:
+            vals = hpf.loc[feat].dropna()
+            vals_nz = vals[vals > 0.001]
+            row["Mean_Ratio"] = round(vals.mean(), 6)
+            row["Median_Ratio"] = round(vals.median(), 6)
+            row["Detection_%"] = round(len(vals_nz)/len(vals)*100, 1) if len(vals) > 0 else 0
+            row["CV_%"] = round(vals_nz.std()/vals_nz.mean()*100, 1) if len(vals_nz) > 1 and vals_nz.mean() > 0 else 0
+        if areas is not None and not areas.empty and feat in areas.index:
+            area_vals = areas.loc[feat].dropna()
+            area_vals = area_vals[np.isfinite(area_vals)]
+            row["Mean_log2Area"] = round(area_vals.mean(), 2) if len(area_vals) > 0 else 0
+        if rt_df is not None and not rt_df.empty and feat in rt_df.index:
+            rt_vals = rt_df.loc[feat].dropna()
+            rt_vals = rt_vals[rt_vals > 0]
+            row["Mean_RT"] = round(rt_vals.mean(), 2) if len(rt_vals) > 0 else 0
+            row["RT_SD"] = round(rt_vals.std(), 3) if len(rt_vals) > 1 else 0
+        summary_rows.append(row)
+    if summary_rows:
+        sum_df = pd.DataFrame(summary_rows)
+        children.append(html.Div(style=CS, children=[
+            _st("H3 73-83 Validation Summary", "All features in the EIAQDFKTDLR region with detection, ratio, area, and RT metrics", icon="star"),
+            make_table(sum_df, "k79-summary-table"),
+        ]))
 
     return html.Div(children)
 
@@ -3398,7 +3901,7 @@ def tab_ndebug(current_exp):
     pairs = _find_ndebug_pairs()
     if not pairs:
         return html.Div(style=CS, children=[
-            _st("ndebug Comparison", "No ndebug pairs found. Need same dataset with ndebug_0 and ndebug_2.", icon="\U0001F50E"),
+            _st("ndebug Comparison", "No ndebug pairs found. Need same dataset with ndebug_0 and ndebug_2.", icon="spectra_compare"),
             html.P("Upload or load experiments with different ndebug modes for the same dataset to compare detection efficacy.",
                    style={"color": C["muted"], "fontSize": "14px"})])
 
@@ -3533,7 +4036,7 @@ def _ndebug_compare(exp_a, exp_b, level, pal):
     children.append(html.Div(style=CS, children=[
         _st("Detection Overlap",
             f"Feature detected = ratio > {DET_THRESH} in >= 50% of samples | "
-            f"Comparing {exp_a} vs {exp_b}", icon="\U0001F50E"),
+            f"Comparing {exp_a} vs {exp_b}", icon="spectra_compare"),
         html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
             html.Div(style={"flex": "2", "minWidth": "450px"}, children=[dcc.Graph(figure=venn_fig)]),
             html.Div(style={"flex": "1", "minWidth": "300px"}, children=[dcc.Graph(figure=pie_fig)]),
@@ -3588,7 +4091,7 @@ def _ndebug_compare(exp_a, exp_b, level, pal):
 
     children.append(html.Div(style=CS, children=[
         _st("Ratio Concordance",
-            f"Scatter of per-feature mean ratios | {corr_text}", icon="\U0001F4CA"),
+            f"Scatter of per-feature mean ratios | {corr_text}", icon="bar_chart"),
         dcc.Graph(figure=sfig),
     ]))
 
@@ -3633,7 +4136,7 @@ def _ndebug_compare(exp_a, exp_b, level, pal):
             children.append(html.Div(style=CS, children=[
                 _st("Per-Group Concordance",
                     "Spearman correlation of group-level mean ratios between ndebug modes",
-                    icon="\U0001F4CA"),
+                    icon="bar_chart"),
                 dcc.Graph(figure=gfig),
             ]))
 
@@ -3675,7 +4178,7 @@ def _ndebug_compare(exp_a, exp_b, level, pal):
     children.append(html.Div(style=CS, children=[
         _st("Detection Sensitivity & Reproducibility",
             "Detection rate distribution + CV comparison between ndebug modes",
-            icon="\U0001F3AF"),
+            icon="ptm"),
         html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
             html.Div(style={"flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=dr_fig)]),
             html.Div(style={"flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=cv_fig)]),
@@ -3717,7 +4220,7 @@ def _ndebug_compare(exp_a, exp_b, level, pal):
     children.append(html.Div(style=CS, children=[
         _st("Differential Detection",
             f"Top 50 features with largest ratio differences between {nd_a} and {nd_b} | "
-            f"log2FC = log2({nd_b}/{nd_a})", icon="\U0001F4CB"),
+            f"log2FC = log2({nd_b}/{nd_a})", icon="table"),
         make_table(diff_df, "ndebug-diff-table"),
     ]))
 
@@ -3771,7 +4274,7 @@ def _ndebug_compare(exp_a, exp_b, level, pal):
             children.append(html.Div(style=CS, children=[
                 _st("Area Intensity Comparison",
                     f"MA plot of log2+QN normalized areas | Positive = higher in {nd_b}",
-                    icon="\U0001F4CA"),
+                    icon="bar_chart"),
                 html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
                     html.Div(style={"flex": "1.2", "minWidth": "450px"}, children=[dcc.Graph(figure=ma_fig)]),
                     html.Div(style={"flex": "0.8", "minWidth": "350px"}, children=[dcc.Graph(figure=box_fig)]),
@@ -3797,7 +4300,7 @@ def _ndebug_compare(exp_a, exp_b, level, pal):
 
     children.append(html.Div(style=CS, children=[
         _st("Summary Statistics",
-            f"Side-by-side comparison of {exp_a} vs {exp_b}", icon="\U0001F4CB"),
+            f"Side-by-side comparison of {exp_a} vs {exp_b}", icon="table"),
         make_table(summary_df, "ndebug-summary-table"),
     ]))
 
@@ -3817,6 +4320,7 @@ def tab_cmp(d):
     if len(groups)<2: return html.Div(style=CS, children=[html.P("Need >=2 groups.")])
 
     designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
+    tissues = sorted(meta["Tissue"].unique()) if "Tissue" in meta.columns and meta["Tissue"].nunique() > 1 else []
 
     filter_children = [
         html.Div(style={"flex":"1","minWidth":"180px"}, children=[
@@ -3865,6 +4369,14 @@ def tab_cmp(d):
                 html.P("Select groups from same strain!", style={"color":C["red"],"fontSize":"11px","margin":"2px 0","fontWeight":"600"}),
             ])
         )
+    if tissues:
+        filter_children.append(html.Div(style={"flex":"1","minWidth":"180px"}, children=[
+            _lbl("Tissue"),
+            dcc.Dropdown(id="cmp-tissue",
+                options=[{"label":"All tissues","value":"All"}]+[{"label":t,"value":t} for t in tissues],
+                value="All", clearable=False, style=DS)]))
+    else:
+        filter_children.append(html.Div(dcc.Store(id="cmp-tissue", data="All")))
 
     return html.Div([
         html.Div(style={**CS,"display":"flex","gap":"16px","flexWrap":"wrap","alignItems":"flex-end"},
@@ -3875,17 +4387,24 @@ def tab_cmp(d):
 @callback(Output("cmp-out","children"),
           Input("cmp-a","value"),Input("cmp-b","value"),Input("cmp-level","value"),
           Input("cmp-show","value"),Input("cmp-classify","value"),Input("cmp-fdr","value"),
+          Input("cmp-tissue","value"),
           Input("cur-exp","data"))
-def _cmp(ga, gb, level, show, classify, fdr_log, exp):
+def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
     t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
     df = _get_data_source(d, level)
-    meta = d["metadata"]
+    meta = d["metadata"].copy()
     is_log = level in ("areas_norm", "areas_log2")
     if df is None or df.empty: return html.P("No data for level.")
 
     fdr_thresh = 10 ** fdr_log if fdr_log else 0.05
+
+    # Filter to tissue if applicable
+    if tissue and tissue != "All" and "Tissue" in meta.columns:
+        meta = meta[meta["Tissue"] == tissue].copy()
+        samps = meta["Sample"].tolist()
+        cols = [c for c in df.columns if c in samps]; df = df[cols]
 
     mw = pairwise_mw(df, meta, ga, gb, is_log=is_log)
     if mw.empty: return html.P("Could not compute comparison.")
@@ -3992,7 +4511,7 @@ def _cmp(ga, gb, level, show, classify, fdr_log, exp):
         ]),
         html.Div(style=CS, children=[dcc.Graph(figure=maf)]),
         html.Div(style=CS, children=[
-            _st("Mann-Whitney Results",f"FDR-corrected | {show} | Editable | Classified", icon="\U00002696"),
+            _st("Mann-Whitney Results",f"FDR-corrected | {show} | Editable | Classified", icon="balance"),
             make_table(display_mw[tbl_cols],"cmp-table")]),
     ])
 
@@ -4130,7 +4649,7 @@ def tab_pheno(d):
             html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=dbf)]) if "Detected_hPTMs" in enriched.columns else html.Div(),
         ]),
         html.Div(style=CS, children=[
-            _st("Sample Metadata Table", "Editable | Processing order, groups, batch, data quality metrics", icon="\U0001F4CB"),
+            _st("Sample Metadata Table", "Editable | Processing order, groups, batch, data quality metrics", icon="table"),
             make_table(enriched, "pheno-table"),
         ]),
     ] + pheno_section
@@ -4194,7 +4713,7 @@ def _bi(f, exp):
                             marker=dict(color=vals.values,colorscale="Viridis",line=dict(width=0))))
     pfig(fig, max(300,len(vals)*16))
     fig.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=12)),margin=dict(l=150,t=10),xaxis_title="Ratio")
-    return html.Div([_st("PTM Profile",f"Sample: {f}", icon="\U0001F50D"), dcc.Graph(figure=fig)])
+    return html.Div([_st("PTM Profile",f"Sample: {f}", icon="search"), dcc.Graph(figure=fig)])
 
 
 # ======================================================================
@@ -4221,7 +4740,7 @@ def tab_log(d, exp):
     if has_history:
         hist_df.columns = ["ID","Experiment","Type","Parameters","Features","Significant","Summary","Duration(ms)","Timestamp"]
         hist_table = html.Div(style=CS, children=[
-            _st("Analysis History", f"Last {len(hist_df)} analyses for {exp}", icon="\U0001F4DD"),
+            _st("Analysis History", f"Last {len(hist_df)} analyses for {exp}", icon="log"),
             make_table(hist_df, "log-hist-table")])
     else:
         hist_table = html.Div(style=CS, children=[html.P("No analyses recorded yet.", style={"color":C["muted"]})])
@@ -4372,7 +4891,7 @@ def tab_export(d):
 
     return html.Div([
         _st("Export Data for R / External Analysis",
-            "Filter data by source, groups, features | Export as CSV, TSV, or R-ready bundle", icon="\U0001F4E6"),
+            "Filter data by source, groups, features | Export as CSV, TSV, or R-ready bundle", icon="export"),
         html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap"},
                  children=filter_children),
         html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap","marginTop":"12px"},
@@ -4811,7 +5330,7 @@ def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, ad
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.10")
+    print("  EpiProfile-Plants Dashboard v3.11")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
