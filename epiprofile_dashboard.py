@@ -3628,7 +3628,8 @@ def tab_k79(d, exp_name):
             box_df = pd.DataFrame(rows_box)
             fig_box = px.box(box_df, x="PTM", y="Ratio", color="Group", points="all",
                              color_discrete_sequence=GC, template="plotly_white")
-            fig_box.update_layout(**PUB.layout.to_plotly_json(), title="H3K79 Single PTM Abundances by Group",
+            pub_kw = {k: v for k, v in PUB.layout.to_plotly_json().items() if k != "legend"}
+            fig_box.update_layout(**pub_kw, title="H3K79 Single PTM Abundances by Group",
                                   height=450, legend=dict(font=dict(size=11)))
             children.append(html.Div(style=CS, children=[
                 _st("K79 Single PTM Abundances", "Box plots showing ratio distribution per K79 modification across groups", icon="bar_chart"),
