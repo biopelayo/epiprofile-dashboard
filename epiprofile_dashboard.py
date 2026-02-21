@@ -31,8 +31,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.cluster.hierarchy import linkage, leaves_list, dendrogram as scipy_dend
-from scipy.spatial.distance import pdist
-from scipy.stats import spearmanr, mannwhitneyu, kruskal
+from scipy.spatial.distance import pdist, squareform
+from scipy.stats import spearmanr, mannwhitneyu, kruskal, fisher_exact
 from sklearn.decomposition import PCA as skPCA
 from sklearn.cluster import SpectralBiclustering, KMeans
 from statsmodels.stats.multitest import multipletests
@@ -2332,175 +2332,326 @@ def tab_upset(d):
 
     groups = sorted(meta["Group"].unique())
     children = []
+    DET_THRESH = 0.005  # detection threshold for ratios
 
     # ============================================
-    # SECTION 1: PTM Co-occurrence from combinatorial hPF
+    # SECTION 1: Sample-level PTM Co-occurrence from combinatorial hPF
     # ============================================
-    combos = hpf_meta[hpf_meta["is_combo"]].copy()
+    # For each sample, which PTM pairs ACTUALLY co-occur on the same peptide?
+    # This uses the peptidoform-level data (hPF), not aggregated hPTM.
+    combos = hpf_meta[hpf_meta["is_combo"]].copy() if "is_combo" in hpf_meta.columns else pd.DataFrame()
 
-    if not combos.empty:
-        pair_counts = {}
+    if not combos.empty and not hpf.empty:
+        # Count: for each PTM pair, in how many samples is a combinatorial
+        # peptidoform carrying BOTH marks detected above threshold?
+        pair_sample_counts = {}   # pair -> set of samples where co-detected
+        pair_peptidoforms = {}    # pair -> list of peptidoform names carrying both
+
         for _, row in combos.iterrows():
-            ptms = row["individual_ptms"]
-            if len(ptms) >= 2:
-                for p1, p2 in combinations(sorted(ptms), 2):
-                    key = f"{p1} + {p2}"
-                    pair_counts[key] = pair_counts.get(key, 0) + 1
+            ptms = row.get("individual_ptms", [])
+            name = row.get("name", "")
+            if len(ptms) < 2 or name not in hpf.index:
+                continue
+            # Which samples have this combinatorial hPF detected?
+            vals = hpf.loc[name]
+            detected_samples = set(vals[vals > DET_THRESH].index)
+            if not detected_samples:
+                continue
+            for p1, p2 in combinations(sorted(ptms), 2):
+                key = f"{p1} + {p2}"
+                if key not in pair_sample_counts:
+                    pair_sample_counts[key] = set()
+                    pair_peptidoforms[key] = []
+                pair_sample_counts[key].update(detected_samples)
+                pair_peptidoforms[key].append(name)
 
-        if pair_counts:
-            sorted_pairs = sorted(pair_counts.items(), key=lambda x: -x[1])[:30]
-            pair_names = [p[0] for p in sorted_pairs]
-            pair_vals = [p[1] for p in sorted_pairs]
-            n_pairs = len(pair_names)
+        if pair_sample_counts:
+            # Build table: pair, n_samples, n_peptidoforms, fraction of total samples
+            total_samps = hpf.shape[1]
+            pair_data = []
+            for pair, samps in pair_sample_counts.items():
+                pair_data.append({
+                    "PTM_Pair": pair,
+                    "Samples_Detected": len(samps),
+                    "Pct_Samples": round(100 * len(samps) / total_samps, 1),
+                    "N_Peptidoforms": len(set(pair_peptidoforms[pair])),
+                    "Peptidoforms": ", ".join(sorted(set(pair_peptidoforms[pair])))[:80],
+                })
+            pair_df = pd.DataFrame(pair_data).sort_values("Samples_Detected", ascending=False).head(30)
 
-            uf = go.Figure(go.Bar(x=pair_vals, y=pair_names, orientation="h",
-                                   marker=dict(color=pair_vals,colorscale="Viridis",line=dict(width=0))))
-            pfig(uf, max(350, n_pairs*22), n_y=n_pairs)
-            uf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=adaptive_font(n_pairs))),
-                             margin=dict(l=adaptive_margin_l(pair_names)),xaxis_title="Co-occurrence Count",
-                             title=dict(text="PTM Co-occurrence (from combinatorial hPF)",font=dict(size=18)))
+            n_pairs = len(pair_df)
+            # Bar chart: co-occurrence by sample count
+            uf = go.Figure(go.Bar(
+                x=pair_df["Samples_Detected"].values, y=pair_df["PTM_Pair"].values,
+                orientation="h", text=pair_df["Pct_Samples"].apply(lambda x: f"{x}%"),
+                textposition="outside", textfont=dict(size=11),
+                marker=dict(color=pair_df["Samples_Detected"].values, colorscale="Viridis",
+                            line=dict(width=0), colorbar=dict(title="Samples"))))
+            pfig(uf, max(400, n_pairs * 22), n_y=n_pairs)
+            uf.update_layout(
+                yaxis=dict(autorange="reversed", tickfont=dict(size=adaptive_font(n_pairs))),
+                margin=dict(l=adaptive_margin_l(pair_df["PTM_Pair"].tolist())),
+                xaxis_title="# Samples with Co-detection",
+                title=dict(text="PTM Co-occurrence on Same Peptide (sample-level)", font=dict(size=16)))
+
             children.append(html.Div(style=CS, children=[
-                _st("Co-occurrence Analysis", f"{len(pair_counts)} unique PTM pairs from {len(combos)} combinatorial peptidoforms", icon="\U0001F517"),
-                dcc.Graph(figure=uf)]))
+                _st("Peptidoform-level Co-occurrence",
+                    f"{len(pair_sample_counts)} unique PTM pairs from {len(combos)} combinatorial peptidoforms | "
+                    f"Co-detection = both marks present (ratio > {DET_THRESH}) in the same sample",
+                    icon="\U0001F517"),
+                dcc.Graph(figure=uf),
+                html.Details([
+                    html.Summary("Show pair details table", style={"cursor":"pointer","color":C["accent"],
+                                  "fontSize":"13px","fontWeight":"600","marginTop":"8px"}),
+                    make_table(pair_df.drop(columns=["Peptidoforms"], errors="ignore"), "cooccur-hpf-table"),
+                ]),
+            ]))
 
     # ============================================
-    # SECTION 2: Mutual Exclusivity / Co-occurrence Matrix
+    # SECTION 2: Pairwise Co-occurrence / Mutual Exclusivity (hPTM level)
     # ============================================
     if hptm is not None and not meta.empty:
-        # Build binary detection matrix (PTM x Sample)
-        thresh = 0.005
-        binary = (hptm > thresh).astype(int)
-
-        # Compute pairwise co-occurrence and mutual exclusivity
+        # Binary detection matrix: is PTM present above threshold in each sample?
+        binary = (hptm > DET_THRESH).astype(int)
         ptm_names = list(binary.index)
         n_ptms = len(ptm_names)
         n_samps = binary.shape[1]
 
-        if n_ptms >= 3:
-            # Co-occurrence matrix: Jaccard index (intersection / union)
-            jaccard = np.zeros((n_ptms, n_ptms))
-            odds_ratio = np.zeros((n_ptms, n_ptms))
-            for i in range(n_ptms):
-                for j in range(i, n_ptms):
-                    a = binary.iloc[i].values
-                    b = binary.iloc[j].values
-                    both = np.sum(a & b)
-                    either = np.sum(a | b)
-                    jaccard[i,j] = jaccard[j,i] = both / (either + 1e-10)
-                    # Fisher-style odds ratio
-                    a_only = np.sum(a & ~b)
-                    b_only = np.sum(~a & b)
-                    neither = np.sum(~a & ~b)
-                    odds_ratio[i,j] = odds_ratio[j,i] = ((both + 0.5) * (neither + 0.5)) / ((a_only + 0.5) * (b_only + 0.5))
+        # Filter to PTMs detected in at least 2 samples (otherwise pairwise is meaningless)
+        ptm_det_count = binary.sum(axis=1)
+        keep_mask = ptm_det_count >= 2
+        binary_f = binary.loc[keep_mask]
+        ptm_names_f = list(binary_f.index)
+        n_ptms_f = len(ptm_names_f)
 
-            # Log2 odds ratio: positive = co-occur, negative = mutually exclusive
-            log_or = np.log2(odds_ratio + 1e-10)
+        if n_ptms_f >= 3:
+            # Compute 2x2 contingency table for each pair
+            # a = both detected, b = A only, c = B only, d = neither
+            # Odds ratio = (a*d) / (b*c), with Haldane correction (+0.5)
+            # Fisher exact test for significance
+            jaccard = np.zeros((n_ptms_f, n_ptms_f))
+            log_or = np.zeros((n_ptms_f, n_ptms_f))
+            pval_mat = np.ones((n_ptms_f, n_ptms_f))
+
+            pair_results = []
+            for i in range(n_ptms_f):
+                ai = binary_f.iloc[i].values.astype(bool)
+                for j in range(i + 1, n_ptms_f):
+                    bj = binary_f.iloc[j].values.astype(bool)
+                    a = int(np.sum(ai & bj))       # both
+                    b = int(np.sum(ai & ~bj))      # A only
+                    c = int(np.sum(~ai & bj))      # B only
+                    dd = int(np.sum(~ai & ~bj))    # neither
+                    union = a + b + c
+                    jac = a / (union + 1e-10)
+                    jaccard[i, j] = jaccard[j, i] = jac
+
+                    # Odds ratio with Haldane correction
+                    oratio = ((a + 0.5) * (dd + 0.5)) / ((b + 0.5) * (c + 0.5))
+                    lor = np.log2(oratio) if oratio > 0 else 0
+                    log_or[i, j] = log_or[j, i] = lor
+
+                    # Fisher exact test (two-sided)
+                    try:
+                        _, pval = fisher_exact([[a, b], [c, dd]])
+                    except:
+                        pval = 1.0
+                    pval_mat[i, j] = pval_mat[j, i] = pval
+
+                    pair_results.append({
+                        "PTM_A": ptm_names_f[i], "PTM_B": ptm_names_f[j],
+                        "Both": a, "A_only": b, "B_only": c, "Neither": dd,
+                        "Jaccard": round(jac, 4), "Log2_OR": round(lor, 3),
+                        "Fisher_p": pval,
+                    })
+
+            # FDR correction on Fisher p-values
+            if pair_results:
+                pvals = [r["Fisher_p"] for r in pair_results]
+                try:
+                    _, fdr_vals, _, _ = multipletests(pvals, method="fdr_bh")
+                except:
+                    fdr_vals = pvals
+                for r, fdr in zip(pair_results, fdr_vals):
+                    r["FDR"] = round(fdr, 6)
+
+            # Cluster and plot the log2 OR matrix
             np.fill_diagonal(log_or, 0)
-
-            # Order by hierarchical clustering
             try:
-                from scipy.cluster.hierarchy import linkage, leaves_list
-                from scipy.spatial.distance import squareform
                 dist_mat = 1 - jaccard
                 np.fill_diagonal(dist_mat, 0)
                 link = linkage(squareform(dist_mat), method="average")
                 order = leaves_list(link)
-                ptm_ordered = [ptm_names[i] for i in order]
+                ptm_ordered = [ptm_names_f[i] for i in order]
                 log_or_ordered = log_or[order][:, order]
             except:
-                ptm_ordered = ptm_names
+                ptm_ordered = ptm_names_f
                 log_or_ordered = log_or
 
-            # Co-occurrence / mutual exclusivity heatmap
-            me_hm = phm(log_or_ordered, ptm_ordered, ptm_ordered,
-                         cs="RdBu_r", title="log2(OR)", zmin=-4, zmax=4)
-            me_hm.update_layout(title=dict(text="Co-occurrence / Mutual Exclusivity (log2 Odds Ratio)",
-                                           font=dict(size=18)))
+            # Clamp extreme values for visual clarity
+            log_or_clamped = np.clip(log_or_ordered, -6, 6)
+            me_hm = phm(log_or_clamped, ptm_ordered, ptm_ordered,
+                         cs="RdBu_r", title="log2(OR)", zmin=-6, zmax=6)
+            me_hm.update_layout(title=dict(
+                text="Co-occurrence / Mutual Exclusivity (log2 Odds Ratio, Fisher + FDR)",
+                font=dict(size=16)))
 
-            # Top co-occurring pairs
-            top_cooccur = []
-            top_exclusive = []
-            for i in range(n_ptms):
-                for j in range(i+1, n_ptms):
-                    both = np.sum(binary.iloc[i].values & binary.iloc[j].values)
-                    lor = log_or[i, j]
-                    jac = jaccard[i, j]
-                    entry = {"PTM_A": ptm_names[i], "PTM_B": ptm_names[j],
-                             "Co_detected": int(both), "Jaccard": round(jac, 3),
-                             "Log2_OR": round(lor, 2)}
-                    if lor > 1.0 and both >= 2:
-                        top_cooccur.append(entry)
-                    elif lor < -1.0:
-                        top_exclusive.append(entry)
-
-            top_cooccur.sort(key=lambda x: -x["Log2_OR"])
-            top_exclusive.sort(key=lambda x: x["Log2_OR"])
+            # Classify pairs
+            res_df = pd.DataFrame(pair_results)
+            sig_co = res_df[(res_df["Log2_OR"] > 1) & (res_df["FDR"] < 0.05) & (res_df["Both"] >= 2)].sort_values("Log2_OR", ascending=False)
+            sig_ex = res_df[(res_df["Log2_OR"] < -1) & (res_df["FDR"] < 0.05)].sort_values("Log2_OR", ascending=True)
+            ns_pairs = len(res_df) - len(sig_co) - len(sig_ex)
 
             # Summary cards
-            n_co = len(top_cooccur)
-            n_ex = len(top_exclusive)
-            summary = html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"12px"}, children=[
-                _sc("PTMs Analyzed", str(n_ptms), C["accent"]),
-                _sc("Co-occurring", str(n_co), C["green"]),
-                _sc("Mutually Exclusive", str(n_ex), C["red"]),
-                _sc("Samples", str(n_samps), C["h4"]),
+            summary = html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"16px"}, children=[
+                _sc("PTMs Analyzed", str(n_ptms_f), C["accent"]),
+                _sc("Total Pairs", str(len(pair_results)), C["h4"]),
+                _sc("Sig. Co-occurring", str(len(sig_co)), C["green"]),
+                _sc("Sig. Exclusive", str(len(sig_ex)), C["red"]),
+                _sc("Not Significant", str(ns_pairs), C["muted"]),
+                _sc("Samples", str(n_samps), "#6b7280"),
             ])
 
-            # Top pairs tables
-            co_table = html.Div()
-            ex_table = html.Div()
-            if top_cooccur:
-                co_df = pd.DataFrame(top_cooccur[:20])
-                co_table = html.Div(style=CS, children=[
-                    _st("Top Co-occurring PTM Pairs", f"log2(OR) > 1, detected together in >= 2 samples"),
-                    make_table(co_df, "cooccur-table")])
-            if top_exclusive:
-                ex_df = pd.DataFrame(top_exclusive[:20])
-                ex_table = html.Div(style=CS, children=[
-                    _st("Top Mutually Exclusive PTM Pairs", "log2(OR) < -1, rarely co-detected"),
-                    make_table(ex_df, "excl-table")])
-
-            children.append(html.H3("Co-occurrence & Mutual Exclusivity",
-                style={"color":C["accent"],"marginTop":"32px","marginBottom":"4px","fontSize":"20px","fontWeight":"700"}))
-            children.append(html.P("Odds ratio measures whether PTM pairs co-occur (positive) or are mutually exclusive (negative) across all samples.",
-                style={"color":C["muted"],"fontSize":"13px","marginBottom":"16px"}))
+            children.append(html.Div(style={"marginTop":"32px"}, children=[
+                _st("Co-occurrence & Mutual Exclusivity",
+                    "Fisher exact test with BH-FDR correction | "
+                    "Positive log2(OR) = co-occurring | Negative = mutually exclusive | "
+                    f"Detection threshold: ratio > {DET_THRESH}",
+                    icon="\U0001F9EC"),
+            ]))
             children.append(summary)
             children.append(html.Div(style=CS, children=[dcc.Graph(figure=me_hm)]))
+
+            # Tables: sig co-occurring and sig exclusive
+            co_table = html.Div()
+            ex_table = html.Div()
+            if not sig_co.empty:
+                co_show = sig_co[["PTM_A","PTM_B","Both","Jaccard","Log2_OR","FDR"]].head(25).copy()
+                co_show["FDR"] = co_show["FDR"].apply(lambda x: f"{x:.2e}" if x < 0.001 else f"{x:.4f}")
+                co_table = html.Div(style=CS, children=[
+                    _st("Significantly Co-occurring Pairs",
+                        f"{len(sig_co)} pairs | log2(OR) > 1, FDR < 0.05, co-detected in >= 2 samples",
+                        icon="\U0001F91D"),
+                    make_table(co_show, "cooccur-sig-table")])
+            if not sig_ex.empty:
+                ex_show = sig_ex[["PTM_A","PTM_B","Both","A_only","B_only","Jaccard","Log2_OR","FDR"]].head(25).copy()
+                ex_show["FDR"] = ex_show["FDR"].apply(lambda x: f"{x:.2e}" if x < 0.001 else f"{x:.4f}")
+                ex_table = html.Div(style=CS, children=[
+                    _st("Significantly Mutually Exclusive Pairs",
+                        f"{len(sig_ex)} pairs | log2(OR) < -1, FDR < 0.05",
+                        icon="\U0001F6AB"),
+                    make_table(ex_show, "excl-sig-table")])
+
             children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-                html.Div(style={"flex":"1","minWidth":"400px"}, children=[co_table]),
-                html.Div(style={"flex":"1","minWidth":"400px"}, children=[ex_table]),
+                html.Div(style={"flex":"1","minWidth":"420px"}, children=[co_table]),
+                html.Div(style={"flex":"1","minWidth":"420px"}, children=[ex_table]),
             ]))
 
+            # Full results table (collapsible)
+            if not res_df.empty:
+                full_show = res_df[["PTM_A","PTM_B","Both","A_only","B_only","Neither","Jaccard","Log2_OR","FDR"]].copy()
+                full_show["FDR"] = full_show["FDR"].apply(lambda x: f"{x:.2e}" if x < 0.001 else f"{x:.4f}")
+                full_show = full_show.sort_values("Log2_OR", ascending=False)
+                children.append(html.Details(style={"marginTop":"12px"}, children=[
+                    html.Summary("Show all pairwise results", style={"cursor":"pointer","color":C["accent"],
+                                  "fontSize":"13px","fontWeight":"600"}),
+                    html.Div(style=CS, children=[make_table(full_show, "cooccur-full-table")]),
+                ]))
+
     # ============================================
-    # SECTION 3: Detection Patterns Across Groups
+    # SECTION 3: Per-Group Detection Profile
     # ============================================
     if hptm is not None and not meta.empty:
+        # For each group: a PTM is "detected" if ratio > threshold in >= 50% of samples
         det_data = {}
         for g in groups:
-            samps = meta[meta["Group"]==g]["Sample"].tolist()
+            samps = meta[meta["Group"] == g]["Sample"].tolist()
             cols = [c for c in hptm.columns if c in samps]
             if cols:
-                gm = hptm[cols].mean(axis=1)
-                det_data[g] = (gm > 0.001).astype(int)
+                frac_detected = (hptm[cols] > DET_THRESH).mean(axis=1)
+                det_data[g] = (frac_detected >= 0.5).astype(int)  # robust: majority rule
         det_df = pd.DataFrame(det_data)
 
-        patterns = {}
-        for ptm in det_df.index:
-            pat = tuple(det_df.loc[ptm].values)
-            key = " & ".join([g for g, v in zip(groups, pat) if v == 1])
-            if not key: key = "None"
-            patterns[key] = patterns.get(key, 0) + 1
+        if not det_df.empty:
+            # UpSet-style: which groups share which PTMs
+            patterns = {}
+            ptm_pattern_map = {}
+            for ptm in det_df.index:
+                pat = tuple(det_df.loc[ptm].values)
+                detected_groups = [g for g, v in zip(groups, pat) if v == 1]
+                key = " & ".join(detected_groups) if detected_groups else "Not detected"
+                patterns[key] = patterns.get(key, 0) + 1
+                ptm_pattern_map.setdefault(key, []).append(ptm)
 
-        sp = sorted(patterns.items(), key=lambda x: -x[1])[:20]
-        pat_names = [p[0] for p in sp]
-        n_pats = len(pat_names)
-        pf = go.Figure(go.Bar(x=[p[1] for p in sp], y=pat_names, orientation="h",
-                               marker=dict(color=[p[1] for p in sp], colorscale="Plasma",line=dict(width=0))))
-        pfig(pf, max(300, n_pats*24), n_y=n_pats)
-        pf.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=adaptive_font(n_pats))),
-                         margin=dict(l=adaptive_margin_l(pat_names)),xaxis_title="# PTMs",
-                         title=dict(text="PTM Detection Patterns Across Groups",font=dict(size=18)))
-        children.append(html.Div(style=CS, children=[dcc.Graph(figure=pf)]))
+            sp = sorted(patterns.items(), key=lambda x: -x[1])[:25]
+            pat_names = [p[0] for p in sp]
+            pat_vals = [p[1] for p in sp]
+            n_pats = len(pat_names)
+
+            # Color by number of groups involved
+            n_groups_in_pat = [len(p[0].split(" & ")) if p[0] != "Not detected" else 0 for p in sp]
+            pf = go.Figure(go.Bar(
+                x=pat_vals, y=pat_names, orientation="h",
+                text=[f"  {v}" for v in pat_vals], textposition="outside",
+                marker=dict(color=n_groups_in_pat, colorscale="Greens",
+                            line=dict(width=0.5, color="#e5e7eb"),
+                            colorbar=dict(title="Groups"))))
+            pfig(pf, max(350, n_pats * 24), n_y=n_pats)
+            pf.update_layout(
+                yaxis=dict(autorange="reversed", tickfont=dict(size=adaptive_font(n_pats))),
+                margin=dict(l=adaptive_margin_l(pat_names)), xaxis_title="# PTMs",
+                title=dict(text="PTM Detection Patterns (>= 50% samples in group)", font=dict(size=16)))
+
+            # Summary: how many ubiquitous, group-specific, shared
+            n_all = patterns.get(" & ".join(groups), 0)
+            n_specific = sum(v for k, v in patterns.items()
+                             if k != "Not detected" and " & " not in k and k != " & ".join(groups))
+            n_shared = sum(v for k, v in patterns.items()
+                           if " & " in k and k != " & ".join(groups))
+            n_none = patterns.get("Not detected", 0)
+
+            det_summary = html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"12px"}, children=[
+                _sc("Ubiquitous (all groups)", str(n_all), C["accent"]),
+                _sc("Group-specific", str(n_specific), C["warn"]),
+                _sc("Shared (2+ groups)", str(n_shared), C["h4"]),
+                _sc("Not detected", str(n_none), C["muted"]),
+            ])
+
+            children.append(html.Div(style=CS, children=[
+                _st("PTM Detection Patterns",
+                    "A PTM is 'detected' in a group if ratio > threshold in >= 50% of group samples | "
+                    "Ubiquitous = present in all groups | Group-specific = unique to one group",
+                    icon="\U0001F50E"),
+                det_summary,
+                dcc.Graph(figure=pf),
+            ]))
+
+            # Group-specific PTMs table (biological insight)
+            specific_data = []
+            for g in groups:
+                if g in patterns:
+                    ptms_in_g = ptm_pattern_map.get(g, [])
+                    for ptm in ptms_in_g:
+                        # Get mean ratio in this group vs others
+                        g_samps = meta[meta["Group"] == g]["Sample"].tolist()
+                        g_cols = [c for c in hptm.columns if c in g_samps]
+                        other_cols = [c for c in hptm.columns if c not in g_samps]
+                        mean_g = hptm.loc[ptm, g_cols].mean() if g_cols else 0
+                        mean_o = hptm.loc[ptm, other_cols].mean() if other_cols else 0
+                        specific_data.append({
+                            "PTM": ptm, "Specific_to": g,
+                            "Mean_in_group": round(mean_g, 4),
+                            "Mean_others": round(mean_o, 5),
+                            "Fold_enrichment": round(mean_g / (mean_o + 1e-8), 1),
+                        })
+            if specific_data:
+                spec_df = pd.DataFrame(specific_data).sort_values("Fold_enrichment", ascending=False)
+                children.append(html.Div(style=CS, children=[
+                    _st("Group-Specific PTMs",
+                        "PTMs detected exclusively in one experimental group (>= 50% of samples)",
+                        icon="\U0001F3F7"),
+                    make_table(spec_df, "group-specific-table"),
+                ]))
 
     # ============================================
     # SECTION 4: Modification complexity per sample
@@ -2508,23 +2659,49 @@ def tab_upset(d):
     n_mods_per_sample = []
     for col in hpf.columns:
         vals = hpf[col].dropna()
-        n_detected = (vals > 0.001).sum()
+        n_detected = int((vals > DET_THRESH).sum())
         combo_detected = 0
-        if not hpf_meta.empty:
+        if not hpf_meta.empty and "is_combo" in hpf_meta.columns:
             combo_names = hpf_meta[hpf_meta["is_combo"]]["name"].tolist()
             combo_vals = hpf.loc[[n for n in combo_names if n in hpf.index], col]
-            combo_detected = (combo_vals > 0.001).sum()
-        n_mods_per_sample.append({"Sample":col,"Total_hPF":n_detected,
-                                   "Combo_hPF":combo_detected,
-                                   "Single_hPF":n_detected - combo_detected})
+            combo_detected = int((combo_vals > DET_THRESH).sum())
+        n_mods_per_sample.append({"Sample": col, "Total_hPF": n_detected,
+                                   "Combo_hPF": combo_detected,
+                                   "Single_hPF": n_detected - combo_detected})
 
     ndf = pd.DataFrame(n_mods_per_sample).merge(meta, on="Sample", how="left")
-    n_samps = len(ndf)
-    cf = px.bar(ndf, x="Sample", y=["Single_hPF","Combo_hPF"], color_discrete_sequence=[C["accent"],C["warn"]],
-                title="Peptidoform Complexity per Sample", barmode="stack")
-    pfig(cf, 380, n_x=n_samps)
-    cf.update_layout(xaxis=dict(tickangle=45,tickfont=dict(size=adaptive_font(n_samps))),yaxis_title="# Detected hPF")
-    children.append(html.Div(style=CS, children=[dcc.Graph(figure=cf)]))
+    n_samps_plot = len(ndf)
+    cf = px.bar(ndf, x="Sample", y=["Single_hPF", "Combo_hPF"],
+                color_discrete_sequence=[C["accent"], C["warn"]],
+                title="Peptidoform Complexity per Sample",
+                barmode="stack", labels={"value":"# Detected hPF","variable":"Type"})
+    pfig(cf, 380, n_x=n_samps_plot)
+    cf.update_layout(xaxis=dict(tickangle=45, tickfont=dict(size=adaptive_font(n_samps_plot))),
+                     yaxis_title="# Detected hPF",
+                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+
+    # Complexity by group (box plot)
+    if "Group" in ndf.columns:
+        bx = px.box(ndf, x="Group", y="Total_hPF", color="Group", points="all",
+                     color_discrete_sequence=GC,
+                     title="Peptidoform Complexity by Group",
+                     labels={"Total_hPF":"# Detected hPF"})
+        pfig(bx, 350)
+        bx.update_layout(showlegend=False)
+        children.append(html.Div(style=CS, children=[
+            _st("Modification Complexity",
+                "How many peptidoforms are detected per sample? | "
+                "Single = one PTM | Combo = multiple PTMs on same peptide",
+                icon="\U0001F9EC"),
+            html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+                html.Div(style={"flex":"1.2","minWidth":"500px"}, children=[dcc.Graph(figure=cf)]),
+                html.Div(style={"flex":"0.8","minWidth":"350px"}, children=[dcc.Graph(figure=bx)]),
+            ]),
+        ]))
+    else:
+        children.append(html.Div(style=CS, children=[
+            _st("Modification Complexity", icon="\U0001F9EC"),
+            dcc.Graph(figure=cf)]))
 
     return html.Div(children)
 
