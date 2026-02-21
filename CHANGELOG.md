@@ -4,6 +4,32 @@ All notable changes to EpiProfile-Plants Dashboard.
 
 ---
 
+## v3.10 (2026-02-21)
+
+### Added
+- **7 Experiments**: All 4 datasets with ndebug_0 and ndebug_2 variants (PXD046788 x2, PXD014739 x2, PXD046034 x1, Ontogeny x2)
+- **ndebug Comparison Tab** (13th tab): Compare detection efficacy between ndebug modes
+  - Detection overlap (Venn + pie chart)
+  - Ratio concordance scatter with Spearman correlation
+  - Per-group concordance bar chart
+  - Detection rate distribution + CV comparison
+  - Differential detection table (top 50 features)
+  - MA plot for normalized area comparison
+  - Summary statistics table
+- **Extended EXPERIMENTS config**: Rich dict structure with dataset, ndebug, ratios_file, singleptm_dir per experiment
+- `load_experiment()` now accepts custom `ratios_file` and `singleptm_dir` parameters
+
+### Changed
+- **Header redesign**: Premium multi-stop gradient, CSS molecular dot pattern overlay, layered glow effects with blur, split title typography ("EpiProfile" + "-Plants"), gradient accent underline, gradient version badge with double shadow, emoji icons on data tags and stats ribbon
+- **Footer**: Matching darker gradient, updated feature list with ndebug Compare
+- Experiment dropdown widened to 440px for longer ndebug names
+- Glass card panels: enhanced with inset highlight, 20px blur, 16px border-radius
+- Stats ribbon: 13 Analysis Tabs, icons on all items
+- DEFAULTS dict replaced by EXPERIMENTS dict (richer structure)
+- ALT_RATIOS removed (superseded by EXPERIMENTS)
+
+---
+
 ## v3.9 (2026-02-21)
 
 ### Added

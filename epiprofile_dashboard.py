@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.9 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.10 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -149,19 +149,41 @@ def get_session_info():
 # ======================================================================
 
 DEFAULTS = {
-    "PXD046788 (Arabidopsis treatments)": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
-    "PXD014739 (Arabidopsis histone)": r"D:\epiprofile_data\PXD014739\RawData",
-    "PXD046034 (Arabidopsis FAS/NAP)": r"E:\EpiProfile_AT_PXD046034_raw\PXD046034\PXD046034",
-    "Ontogeny 1exp (MS1+MS2)": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\histone_layouts_ontogeny_1exp",
-    "Ontogeny RawData (ndebug_2)": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\RawData",
-}
-
-# Alternative histone_ratios files for Ontogeny (ndebug/rt_ref variants)
-ALT_RATIOS = {
-    "Ontogeny RawData (ndebug_2)": {
-        "ndebug_2 (default)": "histone_ratios.xls",
-        "ndebug_0": "histone_ratios_ndebug0_ontogenia.xls",
-        "original (Nov 2024)": "histone_ratios_ontogenia.xls",
+    "PXD046788 ndebug_0": {
+        "dir": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
+        "ratios": "histone_ratios.xls",
+        "ndebug": "ndebug_0", "dataset": "PXD046788",
+    },
+    "PXD046788 ndebug_2": {
+        "dir": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
+        "ratios": "histone_ratios_ndebug2.xls",
+        "ndebug": "ndebug_2", "dataset": "PXD046788",
+    },
+    "PXD014739 ndebug_0": {
+        "dir": r"D:\epiprofile_data\PXD014739\RawData",
+        "ratios": "histone_ratios_ndebug0.xls",
+        "ndebug": "ndebug_0", "dataset": "PXD014739",
+    },
+    "PXD014739 ndebug_2": {
+        "dir": r"D:\epiprofile_data\PXD014739\RawData",
+        "ratios": "histone_ratios_ndeg2.xls",
+        "singleptm_dir": "PXD014738_ndebug2_histone_layouts",
+        "ndebug": "ndebug_2", "dataset": "PXD014739",
+    },
+    "PXD046034": {
+        "dir": r"D:\epiprofile_data\PXD046034\MS1_MS2",
+        "ndebug": "default", "dataset": "PXD046034",
+    },
+    "Ontogeny ndebug_0": {
+        "dir": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\RawData",
+        "ratios": "histone_ratios_ndebug0_ontogenia.xls",
+        "singleptm_dir": "histone_layouts_ndebug_0",
+        "ndebug": "ndebug_0", "dataset": "Ontogeny",
+    },
+    "Ontogeny ndebug_2": {
+        "dir": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\RawData",
+        "ratios": "histone_ratios.xls",
+        "ndebug": "ndebug_2", "dataset": "Ontogeny",
     },
 }
 
@@ -228,19 +250,20 @@ def _get_exp_info(exp_name):
             return EXP_INFO[key]
     return None
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.9")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.10")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
 args, _ = parser.parse_known_args()
 
 if args.dirs:
+    # CLI mode: simple name->path mapping (no ndebug metadata)
     EXPERIMENTS = {}
     for p in args.dirs:
         p = os.path.abspath(p)
-        EXPERIMENTS[os.path.basename(p) or p] = p
+        EXPERIMENTS[os.path.basename(p) or p] = {"dir": p, "ndebug": "default", "dataset": os.path.basename(p)}
 else:
-    EXPERIMENTS = {k: v for k, v in DEFAULTS.items() if os.path.isdir(v)}
+    EXPERIMENTS = {k: v for k, v in DEFAULTS.items() if os.path.isdir(v.get("dir", ""))}
     if not EXPERIMENTS:
         print("ERROR: No valid experiment directories."); sys.exit(1)
 
@@ -500,27 +523,46 @@ def parse_ratios_hierarchy(raw_df):
     }
 
 
-def load_experiment(base_dir):
+def load_experiment(base_dir, ratios_file=None, singleptm_dir=None):
+    """Load experiment data from a directory.
+    Args:
+        base_dir: Root directory for this experiment
+        ratios_file: Specific histone_ratios filename (e.g. 'histone_ratios_ndebug0.xls')
+        singleptm_dir: Subdirectory name for single PTMs (e.g. 'PXD014738_ndebug2_histone_layouts')
+    """
     data = {"base_dir": base_dir}
     layouts_dir = os.path.join(base_dir, "histone_layouts")
     data["layouts_dir"] = layouts_dir if os.path.isdir(layouts_dir) else base_dir
     ld = data["layouts_dir"]
 
     # -- single PTMs (hPTM level) --
+    # If singleptm_dir is specified, look there first
+    sptm_search_dirs = [base_dir, ld]
+    if singleptm_dir:
+        alt_ld = os.path.join(base_dir, singleptm_dir)
+        if os.path.isdir(alt_ld):
+            sptm_search_dirs = [alt_ld] + sptm_search_dirs
     for fn in ["histone_ratios_single_PTMs.tsv","histone_ratios_single_PTMs.xls"]:
-        fp = find_file(base_dir, fn)
-        if not fp: fp = os.path.join(ld, fn) if os.path.exists(os.path.join(ld, fn)) else None
-        if fp and os.path.exists(fp):
-            try:
-                df = try_read_tsv(fp)
-                df.columns = ["PTM"] + [c.split(",",1)[1] if "," in c else c for c in df.columns[1:]]
-                df = df.set_index("PTM").apply(pd.to_numeric, errors="coerce")
-                data["hptm"] = df
-                break
-            except Exception: pass
+        found = False
+        for search_dir in sptm_search_dirs:
+            fp = os.path.join(search_dir, fn)
+            if os.path.exists(fp):
+                try:
+                    df = try_read_tsv(fp)
+                    df.columns = ["PTM"] + [c.split(",",1)[1] if "," in c else c for c in df.columns[1:]]
+                    df = df.set_index("PTM").apply(pd.to_numeric, errors="coerce")
+                    data["hptm"] = df
+                    found = True; break
+                except Exception: pass
+        if found: break
 
     # -- histone_ratios.xls (hDP/hPF hierarchy) --
-    fp = find_file(base_dir, ["histone_ratios.xls","histone_ratios.tsv"])
+    if ratios_file:
+        fp = os.path.join(base_dir, ratios_file)
+        if not os.path.exists(fp):
+            fp = find_file(base_dir, ratios_file)
+    else:
+        fp = find_file(base_dir, ["histone_ratios.xls","histone_ratios.tsv"])
     if fp:
         try:
             raw = try_read_tsv(fp)
@@ -848,29 +890,42 @@ def _get_data_source(d, source):
 
 print("Loading experiments...")
 EXP_DATA = {}
-for name, path in EXPERIMENTS.items():
-    if os.path.isdir(path):
-        print(f"  {name}...")
-        EXP_DATA[name] = load_experiment(path)
-        d = EXP_DATA[name]
-        n_hptm = d["hptm"].shape[0] if "hptm" in d else 0
-        n_hpf = d["hpf"].shape[0] if "hpf" in d and not d["hpf"].empty else 0
-        n_reg = len(d.get("hdp_list", []))
-        meta = d.get("metadata", pd.DataFrame())
-        n_samp = len(meta) if not meta.empty else 0
-        n_grp = meta["Group"].nunique() if not meta.empty and "Group" in meta.columns else 0
-        if "hptm" in d: print(f"    hPTM: {d['hptm'].shape}")
-        if n_hpf: print(f"    hPF:  {d['hpf'].shape}")
-        if n_reg: print(f"    hDP:  {n_reg} regions")
-        if "areas" in d: print(f"    Areas: {d['areas'].shape}")
-        if "areas_norm" in d: print(f"    Areas (log2+QN): {d['areas_norm'].shape}")
-        if "rt" in d: print(f"    RT: {d['rt'].shape}")
-        print(f"    Folders: {len(d['sample_folders'])}")
-        psm = d.get("all_psm", pd.DataFrame())
-        if not psm.empty: print(f"    PSMs: {len(psm)}")
-        print(f"    >> {d.get('description','')}")
-        # Log to database
-        log_experiment(name, path, n_samp, n_grp, n_hptm, n_hpf, n_reg)
+for name, cfg in EXPERIMENTS.items():
+    base_dir = cfg.get("dir", cfg) if isinstance(cfg, dict) else cfg
+    if not os.path.isdir(base_dir):
+        continue
+    print(f"  {name}...")
+    ratios_file = cfg.get("ratios") if isinstance(cfg, dict) else None
+    singleptm_dir = cfg.get("singleptm_dir") if isinstance(cfg, dict) else None
+    EXP_DATA[name] = load_experiment(base_dir, ratios_file=ratios_file,
+                                      singleptm_dir=singleptm_dir)
+    d = EXP_DATA[name]
+    # Store ndebug/dataset metadata for comparison features
+    if isinstance(cfg, dict):
+        d["ndebug"] = cfg.get("ndebug", "default")
+        d["dataset"] = cfg.get("dataset", name)
+    else:
+        d["ndebug"] = "default"
+        d["dataset"] = name
+    # Print loading summary
+    n_hptm = d["hptm"].shape[0] if "hptm" in d else 0
+    n_hpf = d["hpf"].shape[0] if "hpf" in d and not d["hpf"].empty else 0
+    n_reg = len(d.get("hdp_list", []))
+    meta = d.get("metadata", pd.DataFrame())
+    n_samp = len(meta) if not meta.empty else 0
+    n_grp = meta["Group"].nunique() if not meta.empty and "Group" in meta.columns else 0
+    if "hptm" in d: print(f"    hPTM: {d['hptm'].shape}")
+    if n_hpf: print(f"    hPF:  {d['hpf'].shape}")
+    if n_reg: print(f"    hDP:  {n_reg} regions")
+    if "areas" in d: print(f"    Areas: {d['areas'].shape}")
+    if "areas_norm" in d: print(f"    Areas (log2+QN): {d['areas_norm'].shape}")
+    if "rt" in d: print(f"    RT: {d['rt'].shape}")
+    print(f"    Folders: {len(d['sample_folders'])}")
+    psm = d.get("all_psm", pd.DataFrame())
+    if not psm.empty: print(f"    PSMs: {len(psm)}")
+    ndebug_str = f" [{d['ndebug']}]" if d.get("ndebug","default") != "default" else ""
+    print(f"    >> {d.get('description','')}{ndebug_str}")
+    log_experiment(name, base_dir, n_samp, n_grp, n_hptm, n_hpf, n_reg)
 
 DEFAULT_EXP = list(EXP_DATA.keys())[0] if EXP_DATA else None
 
@@ -893,78 +948,96 @@ tss = {**ts,"color":"#0f1f13","borderBottom":"3px solid #22c55e","fontWeight":"7
 # ======================================================================
 
 app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","fontFamily":FONT,"color":C["text"]}, children=[
-    # ---- HERO HEADER (elegant dark green / black / grey) ----
-    html.Div(style={"background":"linear-gradient(160deg, #0f1f13 0%, #14532d 35%, #166534 60%, #1a7a40 100%)",
+    # ---- HERO HEADER (premium dark gradient with molecular pattern) ----
+    html.Div(style={"background":"linear-gradient(155deg, #0a1a0e 0%, #0f2518 20%, #14532d 45%, #166534 65%, #1a7a40 85%, #0f2518 100%)",
                      "padding":"0","color":"white","position":"relative","overflow":"hidden"}, children=[
-        # Decorative accent shapes (subtle emerald glow)
-        html.Div(style={"position":"absolute","top":"-80px","right":"-60px","width":"300px","height":"300px",
-                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(34,197,94,0.15) 0%, transparent 70%)"}),
-        html.Div(style={"position":"absolute","bottom":"-60px","left":"5%","width":"200px","height":"200px",
-                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(74,222,128,0.08) 0%, transparent 70%)"}),
-        html.Div(style={"position":"absolute","top":"20%","right":"30%","width":"100px","height":"100px",
-                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(134,239,172,0.05) 0%, transparent 70%)"}),
-        # Subtle top accent line
-        html.Div(style={"height":"3px","background":"linear-gradient(90deg, transparent 0%, #4ade80 30%, #22c55e 50%, #4ade80 70%, transparent 100%)"}),
+        # Geometric molecular pattern overlay (CSS-only hexagonal dots)
+        html.Div(style={"position":"absolute","inset":"0","opacity":"0.04",
+                         "backgroundImage":"radial-gradient(circle, #4ade80 1px, transparent 1px)",
+                         "backgroundSize":"28px 28px"}),
+        # Decorative accent glows (multiple layered)
+        html.Div(style={"position":"absolute","top":"-100px","right":"-80px","width":"400px","height":"400px",
+                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(34,197,94,0.18) 0%, transparent 60%)",
+                         "filter":"blur(40px)"}),
+        html.Div(style={"position":"absolute","bottom":"-80px","left":"3%","width":"300px","height":"300px",
+                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(16,185,129,0.12) 0%, transparent 60%)",
+                         "filter":"blur(30px)"}),
+        html.Div(style={"position":"absolute","top":"30%","right":"25%","width":"150px","height":"150px",
+                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(74,222,128,0.06) 0%, transparent 70%)"}),
+        html.Div(style={"position":"absolute","top":"10%","left":"40%","width":"200px","height":"200px",
+                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(5,150,105,0.08) 0%, transparent 60%)",
+                         "filter":"blur(25px)"}),
+        # Top accent line (rainbow-ish green spectrum)
+        html.Div(style={"height":"3px",
+                         "background":"linear-gradient(90deg, transparent 0%, #059669 15%, #10b981 30%, #22c55e 45%, #4ade80 55%, #86efac 65%, #22c55e 80%, transparent 100%)"}),
         # Main content row
         html.Div(style={"display":"flex","alignItems":"center","gap":"36px","flexWrap":"wrap",
-                         "position":"relative","zIndex":"1","padding":"36px 52px 16px"}, children=[
-            # Title block
+                         "position":"relative","zIndex":"1","padding":"38px 52px 18px"}, children=[
+            # Title block with enhanced typography
             html.Div([
-                html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"44px","fontWeight":"800",
-                         "letterSpacing":"-1px","color":"#fff","lineHeight":"1.05",
-                         "textShadow":"0 2px 12px rgba(0,0,0,0.3)"}),
-                html.Div(style={"display":"flex","gap":"12px","alignItems":"center","marginTop":"10px",
+                html.Div(style={"display":"flex","alignItems":"baseline","gap":"16px"}, children=[
+                    html.H1("EpiProfile", style={"margin":"0","fontSize":"46px","fontWeight":"800",
+                             "letterSpacing":"-1.5px","color":"#fff","lineHeight":"1",
+                             "textShadow":"0 2px 16px rgba(0,0,0,0.4)"}),
+                    html.Span("-Plants", style={"fontSize":"46px","fontWeight":"300","color":"#4ade80",
+                              "letterSpacing":"-1px","lineHeight":"1",
+                              "textShadow":"0 2px 16px rgba(74,222,128,0.3)"}),
+                ]),
+                # Thin accent underline
+                html.Div(style={"height":"2px","width":"180px","marginTop":"8px",
+                                 "background":"linear-gradient(90deg, #22c55e 0%, #4ade80 50%, transparent 100%)",
+                                 "borderRadius":"2px"}),
+                html.Div(style={"display":"flex","gap":"12px","alignItems":"center","marginTop":"12px",
                                  "flexWrap":"wrap"}, children=[
                     html.Span("Histone PTM Quantification Dashboard", style={"color":"#94a3b8",
-                              "fontSize":"16px","fontWeight":"400","letterSpacing":"0.3px"}),
-                    html.Span("v3.9", style={"background":"#22c55e","padding":"3px 14px",
-                              "borderRadius":"14px","fontSize":"12px","fontWeight":"700","color":"#0f1f13",
-                              "boxShadow":"0 0 10px rgba(34,197,94,0.4)"}),
+                              "fontSize":"15px","fontWeight":"400","letterSpacing":"0.5px"}),
+                    html.Span("v3.10", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
+                              "padding":"3px 14px","borderRadius":"14px","fontSize":"12px","fontWeight":"700",
+                              "color":"#0f1f13","boxShadow":"0 0 12px rgba(34,197,94,0.5), 0 0 4px rgba(34,197,94,0.3)"}),
                 ]),
                 html.Div(style={"display":"flex","gap":"8px","alignItems":"center","marginTop":"14px",
                                  "flexWrap":"wrap"}, children=[
-                    html.Span(t, style={"background":"rgba(255,255,255,0.08)","padding":"5px 16px",
-                              "borderRadius":"6px","fontSize":"13px","fontWeight":"600","color":"#d1d5db",
-                              "border":"1px solid rgba(255,255,255,0.1)","letterSpacing":"0.5px",
-                              "transition":"all 0.2s ease"})
-                    for t in ["hPTM", "hPF", "hDP", "Areas", "RT"]
+                    html.Span(t, style={"background":"rgba(255,255,255,0.06)","padding":"5px 16px",
+                              "borderRadius":"8px","fontSize":"13px","fontWeight":"600","color":"#d1d5db",
+                              "border":"1px solid rgba(255,255,255,0.08)","letterSpacing":"0.5px"})
+                    for t in ["\U0001F9EA hPTM", "\U0001F52C hPF", "\U0001F9EC hDP", "\U0001F4CA Areas", "\U000023F1 RT"]
                 ]),
             ]),
-            html.Div(style={"flex":"1","minWidth":"40px"}),
-            # Experiment selector -- dark glass card
-            html.Div(style={"background":"rgba(255,255,255,0.07)","borderRadius":"14px","padding":"16px 22px",
-                             "border":"1px solid rgba(255,255,255,0.12)","backdropFilter":"blur(16px)",
-                             "boxShadow":"0 8px 32px rgba(0,0,0,0.2)"}, children=[
-                html.Span("EXPERIMENT",style={"color":"#86efac","fontSize":"11px","fontWeight":"700",
-                           "letterSpacing":"2px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
+            html.Div(style={"flex":"1","minWidth":"30px"}),
+            # Experiment selector -- enhanced glass card
+            html.Div(style={"background":"rgba(255,255,255,0.06)","borderRadius":"16px","padding":"18px 24px",
+                             "border":"1px solid rgba(255,255,255,0.10)","backdropFilter":"blur(20px)",
+                             "boxShadow":"0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05)"}, children=[
+                html.Span("\U0001F9EA EXPERIMENT",style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
+                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
                 dcc.Dropdown(id="exp-sel", options=[{"label":k,"value":k} for k in EXP_DATA],
                              value=DEFAULT_EXP, clearable=False,
-                             style={"width":"380px","fontSize":"14px","borderRadius":"10px"}),
+                             style={"width":"440px","fontSize":"14px","borderRadius":"10px"}),
             ]),
-            # Color palette selector -- dark glass card
-            html.Div(style={"background":"rgba(255,255,255,0.07)","borderRadius":"14px","padding":"16px 22px",
-                             "border":"1px solid rgba(255,255,255,0.12)","backdropFilter":"blur(16px)",
-                             "boxShadow":"0 8px 32px rgba(0,0,0,0.2)"}, children=[
-                html.Span("PALETTE",style={"color":"#86efac","fontSize":"11px","fontWeight":"700",
-                           "letterSpacing":"2px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
+            # Color palette selector -- enhanced glass card
+            html.Div(style={"background":"rgba(255,255,255,0.06)","borderRadius":"16px","padding":"18px 24px",
+                             "border":"1px solid rgba(255,255,255,0.10)","backdropFilter":"blur(20px)",
+                             "boxShadow":"0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05)"}, children=[
+                html.Span("\U0001F3A8 PALETTE",style={"color":"#86efac","fontSize":"10px","fontWeight":"700",
+                           "letterSpacing":"2.5px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
                 dcc.Dropdown(id="palette-sel",
                              options=[{"label":k,"value":k} for k in PALETTES],
                              value="EpiProfile (default)", clearable=False,
                              style={"width":"220px","fontSize":"14px","borderRadius":"10px"}),
             ]),
         ]),
-        # Stats ribbon -- elegant with green accents
+        # Stats ribbon -- enhanced with icons
         html.Div(style={"display":"flex","gap":"20px","alignItems":"center","justifyContent":"center",
-                         "padding":"12px 52px 14px","position":"relative","zIndex":"1","flexWrap":"wrap"}, children=[
-            html.Span(f"{len(EXP_DATA)} Experiments", style={"color":"#86efac","fontSize":"13px","fontWeight":"600"}),
-            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
-            html.Span("12 Analysis Tabs", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
-            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
-            html.Span("KW + MW Statistics", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
-            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
-            html.Span("PCA + Biclustering", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
-            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
-            html.Span("Export to R", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+                         "padding":"14px 52px 16px","position":"relative","zIndex":"1","flexWrap":"wrap"}, children=[
+            html.Span(f"\U0001F4C1 {len(EXP_DATA)} Experiments", style={"color":"#86efac","fontSize":"13px","fontWeight":"600"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
+            html.Span("\U0001F4CA 13 Analysis Tabs", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
+            html.Span("\U0001F4C8 KW + MW + FDR", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
+            html.Span("\U0001F4D0 PCA + Silhouette", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
+            html.Span("\U0001F50E ndebug Compare", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
         ]),
         # Upload area (collapsible, 3-slot) -- dark glass panel
         html.Details(style={"margin":"6px 52px 0","position":"relative","zIndex":"1",
@@ -1051,34 +1124,36 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
         dcc.Tab(label="\U0001F4CB Phenodata", value="tab-pheno", style=ts, selected_style=tss),
         dcc.Tab(label="\U0001F50D Sample Browser", value="tab-browse", style=ts, selected_style=tss),
         dcc.Tab(label="\U0001F4E6 Export to R", value="tab-export", style=ts, selected_style=tss),
+        dcc.Tab(label="\U0001F50E ndebug Compare", value="tab-ndebug", style=ts, selected_style=tss),
         dcc.Tab(label="\U0001F4DD Analysis Log", value="tab-log", style=ts, selected_style=tss),
     ]),
     html.Div(id="tab-out", style={"padding":"30px 48px","maxWidth":"1800px","margin":"0 auto"}),
     # ---- Download component (hidden, triggered by export callbacks) ----
     dcc.Download(id="download-data"),
-    # ---- Footer (dark green, matches header) ----
+    # ---- Footer (matches header gradient) ----
     html.Div(style={"textAlign":"center","padding":"30px 52px","fontSize":"12px",
-                     "background":"linear-gradient(160deg, #0f1f13 0%, #14532d 60%, #166534 100%)",
+                     "background":"linear-gradient(155deg, #0a1a0e 0%, #0f2518 40%, #14532d 70%, #166534 100%)",
                      "borderTop":"2px solid #22c55e","marginTop":"48px","color":"#9ca3af"}, children=[
         html.Div(style={"display":"flex","justifyContent":"center","alignItems":"center","gap":"16px",
                          "flexWrap":"wrap","marginBottom":"10px"}, children=[
             html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"17px","color":"#fff",
                        "letterSpacing":"-0.5px"}),
-            html.Span("v3.9", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
-                       "background":"#22c55e","padding":"3px 12px","borderRadius":"10px",
-                       "boxShadow":"0 0 8px rgba(34,197,94,0.3)"}),
-            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.Span("v3.10", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
+                       "background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
+                       "padding":"3px 12px","borderRadius":"10px",
+                       "boxShadow":"0 0 8px rgba(34,197,94,0.4)"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
             html.Span("Histone PTM Quantification Dashboard", style={"fontWeight":"500","color":"#6b7280",
                        "fontSize":"13px"}),
-            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"8px"}),
             html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
                    style={"color":"#86efac","textDecoration":"none","fontWeight":"700",
                           "fontSize":"13px","letterSpacing":"0.5px",
                           "borderBottom":"1px solid rgba(134,239,172,0.3)",
                           "paddingBottom":"1px"}, target="_blank"),
         ]),
-        html.P("Publication-quality visualization | Kruskal-Wallis + Mann-Whitney + FDR | "
-               "PCA + Biclustering | Co-occurrence + UpSet | Export to R",
+        html.P("Publication-quality visualization | KW + MW + FDR | "
+               "PCA + Silhouette | ndebug Comparison | Co-occurrence + UpSet | Export to R",
                style={"margin":"8px 0 0","color":"#4b5563","fontSize":"11px","fontWeight":"400",
                        "letterSpacing":"0.5px"}),
     ]),
@@ -1311,6 +1386,7 @@ def _rt(tab, exp, pal):
     try:
         if tab == "tab-log": return tab_log(d, exp)
         if tab == "tab-export": return tab_export(d)
+        if tab == "tab-ndebug": return tab_ndebug(exp)
         return {"tab-hpf":tab_hpf,"tab-hptm":tab_hptm,"tab-qc":tab_qc,
                 "tab-pca":tab_pca,"tab-stats":tab_stats,"tab-upset":tab_upset,
                 "tab-region":tab_region,"tab-cmp":tab_cmp,"tab-pheno":tab_pheno,
@@ -3304,6 +3380,431 @@ def tab_region(d):
 
 
 # ======================================================================
+# TAB: ndebug COMPARISON (Detection Efficacy Between ndebug Modes)
+# ======================================================================
+
+def _find_ndebug_pairs():
+    """Find experiments that share the same dataset but differ in ndebug mode."""
+    datasets = {}
+    for name, d in EXP_DATA.items():
+        ds = d.get("dataset", name)
+        nd = d.get("ndebug", "default")
+        if nd != "default":
+            datasets.setdefault(ds, []).append((name, nd))
+    return {ds: exps for ds, exps in datasets.items() if len(exps) >= 2}
+
+def tab_ndebug(current_exp):
+    """Build the ndebug comparison tab layout with dropdowns and output area."""
+    pairs = _find_ndebug_pairs()
+    if not pairs:
+        return html.Div(style=CS, children=[
+            _st("ndebug Comparison", "No ndebug pairs found. Need same dataset with ndebug_0 and ndebug_2.", icon="\U0001F50E"),
+            html.P("Upload or load experiments with different ndebug modes for the same dataset to compare detection efficacy.",
+                   style={"color": C["muted"], "fontSize": "14px"})])
+
+    # Build dropdown options grouped by dataset
+    all_options = []
+    for ds, exps in sorted(pairs.items()):
+        for exp_name, nd_mode in exps:
+            all_options.append({"label": f"{exp_name}", "value": exp_name})
+
+    # Try to auto-select a pair from current experiment's dataset
+    cur_ds = EXP_DATA.get(current_exp, {}).get("dataset", "")
+    default_a, default_b = all_options[0]["value"], all_options[1]["value"] if len(all_options) > 1 else all_options[0]["value"]
+    if cur_ds in pairs:
+        p = pairs[cur_ds]
+        if len(p) >= 2:
+            default_a, default_b = p[0][0], p[1][0]
+
+    return html.Div([
+        html.Div(style={**CS, "display": "flex", "gap": "16px", "flexWrap": "wrap", "alignItems": "flex-end"}, children=[
+            html.Div(style={"flex": "1", "minWidth": "250px"}, children=[
+                _lbl("Experiment A (reference)"),
+                dcc.Dropdown(id="ndebug-a", options=all_options, value=default_a, clearable=False, style=DS)]),
+            html.Div(style={"flex": "1", "minWidth": "250px"}, children=[
+                _lbl("Experiment B (compare)"),
+                dcc.Dropdown(id="ndebug-b", options=all_options, value=default_b, clearable=False, style=DS)]),
+            html.Div(style={"flex": "1", "minWidth": "200px"}, children=[
+                _lbl("Data Level"),
+                dcc.Dropdown(id="ndebug-level",
+                    options=[{"label": "hPTM (single PTMs)", "value": "hptm"},
+                             {"label": "hPF (peptidoforms)", "value": "hpf"}],
+                    value="hpf", clearable=False, style=DS)]),
+        ]),
+        html.Div(id="ndebug-out"),
+    ])
+
+@callback(Output("ndebug-out", "children"),
+          Input("ndebug-a", "value"), Input("ndebug-b", "value"),
+          Input("ndebug-level", "value"), Input("cur-palette", "data"),
+          prevent_initial_call=True)
+def _ndebug_compare(exp_a, exp_b, level, pal):
+    if not exp_a or not exp_b or exp_a not in EXP_DATA or exp_b not in EXP_DATA:
+        return html.P("Select two experiments to compare.", style={"color": C["muted"]})
+    if exp_a == exp_b:
+        return html.P("Select two different experiments.", style={"color": C["warn"]})
+
+    da, db = EXP_DATA[exp_a], EXP_DATA[exp_b]
+    nd_a = da.get("ndebug", "?")
+    nd_b = db.get("ndebug", "?")
+    ds_a = da.get("dataset", exp_a)
+    ds_b = db.get("dataset", exp_b)
+
+    df_a = da.get(level, da.get("hpf"))
+    df_b = db.get(level, db.get("hpf"))
+    meta_a = da.get("metadata", pd.DataFrame())
+    meta_b = db.get("metadata", pd.DataFrame())
+
+    if df_a is None or df_b is None or df_a.empty or df_b.empty:
+        return html.P("No data available for selected level.", style={"color": C["red"]})
+
+    DET_THRESH = 0.001
+    children = []
+    level_label = "hPTM" if level == "hptm" else "hPF"
+
+    # Align features (use intersection)
+    common_feats = sorted(set(df_a.index) & set(df_b.index))
+    only_a_feats = sorted(set(df_a.index) - set(df_b.index))
+    only_b_feats = sorted(set(df_b.index) - set(df_a.index))
+    if not common_feats:
+        return html.P("No common features between the two experiments.", style={"color": C["red"]})
+
+    dfa = df_a.loc[common_feats]
+    dfb = df_b.loc[common_feats]
+
+    # Detection: a feature is "detected" if ratio > threshold in >= 50% of samples
+    det_a = (dfa > DET_THRESH).mean(axis=1) >= 0.5
+    det_b = (dfb > DET_THRESH).mean(axis=1) >= 0.5
+    both_det = det_a & det_b
+    only_a = det_a & ~det_b
+    only_b = ~det_a & det_b
+    neither = ~det_a & ~det_b
+
+    n_both = int(both_det.sum())
+    n_only_a = int(only_a.sum())
+    n_only_b = int(only_b.sum())
+    n_neither = int(neither.sum())
+    n_total = len(common_feats)
+
+    # Mean ratios per feature
+    mean_a = dfa.mean(axis=1)
+    mean_b = dfb.mean(axis=1)
+
+    # ============================================================
+    # SECTION 1: Summary Cards
+    # ============================================================
+    children.append(html.Div(style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "16px"}, children=[
+        _sc(f"Common {level_label}", str(n_total), C["accent"]),
+        _sc(f"Both detected", str(n_both), C["h4"]),
+        _sc(f"Only {nd_a}", str(n_only_a), C["h3"]),
+        _sc(f"Only {nd_b}", str(n_only_b), C["warn"]),
+        _sc("Neither", str(n_neither), C["muted"]),
+        _sc(f"Unique to A", str(len(only_a_feats)), "#6b7280") if only_a_feats else None,
+        _sc(f"Unique to B", str(len(only_b_feats)), "#6b7280") if only_b_feats else None,
+    ]))
+
+    # ============================================================
+    # SECTION 2: Detection Venn (stacked bar)
+    # ============================================================
+    venn_fig = go.Figure()
+    categories = [f"Both", f"Only {nd_a}", f"Only {nd_b}", "Neither"]
+    counts = [n_both, n_only_a, n_only_b, n_neither]
+    colors = [C["accent"], C["h3"], C["warn"], C["muted"]]
+    venn_fig.add_trace(go.Bar(
+        x=counts, y=["Detection"] * 4, orientation="h",
+        marker_color=colors, text=[f"{c} ({c/n_total*100:.1f}%)" for c in counts],
+        textposition="inside", textfont=dict(size=13, color="white"),
+        showlegend=False))
+    pfig(venn_fig, 140)
+    venn_fig.update_layout(
+        barmode="stack", xaxis_title=f"# {level_label} Features",
+        yaxis=dict(showticklabels=False),
+        title=dict(text=f"Detection Overlap: {nd_a} vs {nd_b} ({ds_a})", font=dict(size=16)))
+
+    # Also make a pie chart
+    pie_fig = go.Figure(go.Pie(
+        labels=categories, values=counts,
+        marker=dict(colors=colors),
+        textinfo="label+percent", textfont=dict(size=12),
+        hole=0.45))
+    pfig(pie_fig, 350)
+    pie_fig.update_layout(title=dict(text="Detection Distribution", font=dict(size=16)))
+
+    children.append(html.Div(style=CS, children=[
+        _st("Detection Overlap",
+            f"Feature detected = ratio > {DET_THRESH} in >= 50% of samples | "
+            f"Comparing {exp_a} vs {exp_b}", icon="\U0001F50E"),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={"flex": "2", "minWidth": "450px"}, children=[dcc.Graph(figure=venn_fig)]),
+            html.Div(style={"flex": "1", "minWidth": "300px"}, children=[dcc.Graph(figure=pie_fig)]),
+        ]),
+    ]))
+
+    # ============================================================
+    # SECTION 3: Scatter Plot (mean ratio A vs B)
+    # ============================================================
+    scatter_df = pd.DataFrame({
+        "Feature": common_feats,
+        f"Mean_{nd_a}": mean_a.values,
+        f"Mean_{nd_b}": mean_b.values,
+    })
+    # Classification for coloring
+    status = []
+    for f in common_feats:
+        if both_det[f]:
+            status.append("Both detected")
+        elif only_a[f]:
+            status.append(f"Only {nd_a}")
+        elif only_b[f]:
+            status.append(f"Only {nd_b}")
+        else:
+            status.append("Neither")
+    scatter_df["Status"] = status
+
+    status_colors = {"Both detected": C["accent"], f"Only {nd_a}": C["h3"],
+                     f"Only {nd_b}": C["warn"], "Neither": C["muted"]}
+    sfig = px.scatter(scatter_df, x=f"Mean_{nd_a}", y=f"Mean_{nd_b}",
+                       color="Status", hover_name="Feature",
+                       color_discrete_map=status_colors)
+    sfig.update_traces(marker=dict(size=9, line=dict(width=1, color="white"), opacity=0.8))
+    # Identity line
+    max_val = max(scatter_df[f"Mean_{nd_a}"].max(), scatter_df[f"Mean_{nd_b}"].max())
+    sfig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                               line=dict(dash="dash", color="#9ca3af", width=1.5),
+                               showlegend=False, hoverinfo="skip"))
+    pfig(sfig, 500)
+    sfig.update_layout(
+        xaxis_title=f"Mean Ratio ({nd_a})", yaxis_title=f"Mean Ratio ({nd_b})",
+        title=dict(text=f"Concordance: {nd_a} vs {nd_b} Mean Ratios", font=dict(size=16)))
+
+    # Spearman correlation
+    from scipy.stats import spearmanr as _spearmanr_nd
+    valid_mask = (mean_a > 0) & (mean_b > 0)
+    if valid_mask.sum() >= 3:
+        rho, pval = _spearmanr_nd(mean_a[valid_mask], mean_b[valid_mask])
+        corr_text = f"Spearman rho = {rho:.4f} (p = {pval:.2e}, n = {valid_mask.sum()})"
+    else:
+        corr_text = "Insufficient data for correlation"
+
+    children.append(html.Div(style=CS, children=[
+        _st("Ratio Concordance",
+            f"Scatter of per-feature mean ratios | {corr_text}", icon="\U0001F4CA"),
+        dcc.Graph(figure=sfig),
+    ]))
+
+    # ============================================================
+    # SECTION 4: Per-Group Concordance Heatmap
+    # ============================================================
+    if not meta_a.empty and not meta_b.empty:
+        groups_a = sorted(meta_a["Group"].unique())
+        groups_b = sorted(meta_b["Group"].unique())
+        common_groups = sorted(set(groups_a) & set(groups_b))
+        if common_groups:
+            corr_matrix = []
+            for g in common_groups:
+                samps_a = meta_a[meta_a["Group"] == g]["Sample"].tolist()
+                samps_b = meta_b[meta_b["Group"] == g]["Sample"].tolist()
+                cols_a = [c for c in dfa.columns if c in samps_a]
+                cols_b = [c for c in dfb.columns if c in samps_b]
+                if cols_a and cols_b:
+                    ma = dfa[cols_a].mean(axis=1)
+                    mb = dfb[cols_b].mean(axis=1)
+                    valid = (ma > 0) & (mb > 0)
+                    if valid.sum() >= 3:
+                        rho, _ = spearmanr(ma[valid], mb[valid])
+                    else:
+                        rho = np.nan
+                else:
+                    rho = np.nan
+                corr_matrix.append(rho)
+
+            # Bar chart of per-group correlations
+            gfig = go.Figure(go.Bar(
+                x=common_groups, y=corr_matrix,
+                marker_color=[GC[i % len(GC)] for i in range(len(common_groups))],
+                text=[f"{r:.3f}" if not np.isnan(r) else "N/A" for r in corr_matrix],
+                textposition="outside", textfont=dict(size=12)))
+            pfig(gfig, 380)
+            gfig.update_layout(
+                xaxis_title="Group", yaxis_title="Spearman rho",
+                yaxis=dict(range=[0, 1.1]),
+                title=dict(text=f"Per-Group Concordance ({nd_a} vs {nd_b})", font=dict(size=16)))
+
+            children.append(html.Div(style=CS, children=[
+                _st("Per-Group Concordance",
+                    "Spearman correlation of group-level mean ratios between ndebug modes",
+                    icon="\U0001F4CA"),
+                dcc.Graph(figure=gfig),
+            ]))
+
+    # ============================================================
+    # SECTION 5: Detection Rate & Sensitivity
+    # ============================================================
+    # For each feature, calculate detection rate in each mode
+    det_rate_a = (dfa > DET_THRESH).mean(axis=1)
+    det_rate_b = (dfb > DET_THRESH).mean(axis=1)
+
+    dr_fig = go.Figure()
+    dr_fig.add_trace(go.Histogram(x=det_rate_a, name=nd_a, marker_color=C["h3"],
+                                   opacity=0.6, nbinsx=20))
+    dr_fig.add_trace(go.Histogram(x=det_rate_b, name=nd_b, marker_color=C["warn"],
+                                   opacity=0.6, nbinsx=20))
+    pfig(dr_fig, 380)
+    dr_fig.update_layout(
+        barmode="overlay", xaxis_title="Detection Rate (fraction of samples)",
+        yaxis_title=f"# {level_label} Features",
+        title=dict(text="Detection Rate Distribution", font=dict(size=16)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+
+    # CV comparison
+    cv_a = dfa.replace(0, np.nan).std(axis=1) / dfa.replace(0, np.nan).mean(axis=1)
+    cv_b = dfb.replace(0, np.nan).std(axis=1) / dfb.replace(0, np.nan).mean(axis=1)
+
+    cv_fig = px.scatter(x=cv_a.values, y=cv_b.values,
+                         labels={"x": f"CV ({nd_a})", "y": f"CV ({nd_b})"},
+                         hover_name=common_feats)
+    cv_fig.update_traces(marker=dict(size=8, color=C["accent"], opacity=0.6,
+                                      line=dict(width=1, color="white")))
+    max_cv = max(cv_a.dropna().max(), cv_b.dropna().max()) if not cv_a.dropna().empty else 5
+    cv_fig.add_trace(go.Scatter(x=[0, max_cv], y=[0, max_cv], mode="lines",
+                                 line=dict(dash="dash", color="#9ca3af", width=1.5),
+                                 showlegend=False, hoverinfo="skip"))
+    pfig(cv_fig, 420)
+    cv_fig.update_layout(title=dict(text=f"Coefficient of Variation: {nd_a} vs {nd_b}", font=dict(size=16)))
+
+    children.append(html.Div(style=CS, children=[
+        _st("Detection Sensitivity & Reproducibility",
+            "Detection rate distribution + CV comparison between ndebug modes",
+            icon="\U0001F3AF"),
+        html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+            html.Div(style={"flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=dr_fig)]),
+            html.Div(style={"flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=cv_fig)]),
+        ]),
+    ]))
+
+    # ============================================================
+    # SECTION 6: Differential Detection Table
+    # ============================================================
+    diff_data = []
+    for feat in common_feats:
+        ma = mean_a[feat]
+        mb = mean_b[feat]
+        da_ = det_a[feat]
+        db_ = det_b[feat]
+        if ma > 0 and mb > 0:
+            fc = np.log2(mb / ma) if ma > 0 else np.nan
+        elif ma > 0:
+            fc = -np.inf
+        elif mb > 0:
+            fc = np.inf
+        else:
+            fc = 0
+        diff_data.append({
+            "Feature": feat,
+            f"Mean_{nd_a}": round(ma, 5),
+            f"Mean_{nd_b}": round(mb, 5),
+            "log2FC": round(fc, 3) if np.isfinite(fc) else ("Inf" if fc > 0 else "-Inf"),
+            f"Det_{nd_a}": "Yes" if da_ else "No",
+            f"Det_{nd_b}": "Yes" if db_ else "No",
+            "Status": "Both" if both_det[feat] else (f"Only {nd_a}" if only_a[feat] else
+                       (f"Only {nd_b}" if only_b[feat] else "Neither")),
+        })
+    diff_df = pd.DataFrame(diff_data)
+    # Sort by absolute log2FC (biggest differences first)
+    diff_df["_abs_fc"] = diff_df["log2FC"].apply(lambda x: abs(float(x)) if isinstance(x, (int, float)) else 999)
+    diff_df = diff_df.sort_values("_abs_fc", ascending=False).drop(columns=["_abs_fc"]).head(50)
+
+    children.append(html.Div(style=CS, children=[
+        _st("Differential Detection",
+            f"Top 50 features with largest ratio differences between {nd_a} and {nd_b} | "
+            f"log2FC = log2({nd_b}/{nd_a})", icon="\U0001F4CB"),
+        make_table(diff_df, "ndebug-diff-table"),
+    ]))
+
+    # ============================================================
+    # SECTION 7: Area Comparison (if both have areas)
+    # ============================================================
+    areas_a = da.get("areas_norm")
+    areas_b = db.get("areas_norm")
+    if areas_a is not None and areas_b is not None and not areas_a.empty and not areas_b.empty:
+        common_area_feats = sorted(set(areas_a.index) & set(areas_b.index))
+        if common_area_feats:
+            area_mean_a = areas_a.loc[common_area_feats].mean(axis=1)
+            area_mean_b = areas_b.loc[common_area_feats].mean(axis=1)
+
+            # MA plot (mean vs difference)
+            M = (area_mean_a + area_mean_b) / 2  # average intensity
+            A_diff = area_mean_b - area_mean_a     # difference (log scale, so this = log2 FC)
+
+            ma_fig = go.Figure()
+            ma_fig.add_trace(go.Scatter(
+                x=M.values, y=A_diff.values, mode="markers",
+                marker=dict(size=7, color=C["accent"], opacity=0.6,
+                            line=dict(width=0.5, color="white")),
+                text=common_area_feats, hoverinfo="text+x+y",
+                name="Features"))
+            ma_fig.add_hline(y=0, line_dash="dash", line_color="#9ca3af", line_width=1.5)
+            pfig(ma_fig, 450)
+            ma_fig.update_layout(
+                xaxis_title="Mean log2 Intensity (A)", yaxis_title=f"Difference ({nd_b} - {nd_a})",
+                title=dict(text=f"MA Plot: Normalized Areas ({nd_a} vs {nd_b})", font=dict(size=16)))
+
+            # Intensity distributions (box plots)
+            box_data = []
+            for feat in common_area_feats[:30]:  # top 30 features
+                for v in areas_a.loc[feat].dropna():
+                    box_data.append({"Feature": feat, "Mode": nd_a, "log2_Area": v})
+                for v in areas_b.loc[feat].dropna():
+                    box_data.append({"Feature": feat, "Mode": nd_b, "log2_Area": v})
+            if box_data:
+                bdf = pd.DataFrame(box_data)
+                box_fig = px.box(bdf, x="Mode", y="log2_Area", color="Mode",
+                                  color_discrete_map={nd_a: C["h3"], nd_b: C["warn"]},
+                                  points="all")
+                pfig(box_fig, 380)
+                box_fig.update_layout(
+                    title=dict(text=f"Intensity Distribution Comparison", font=dict(size=16)),
+                    showlegend=False)
+            else:
+                box_fig = go.Figure()
+
+            children.append(html.Div(style=CS, children=[
+                _st("Area Intensity Comparison",
+                    f"MA plot of log2+QN normalized areas | Positive = higher in {nd_b}",
+                    icon="\U0001F4CA"),
+                html.Div(style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}, children=[
+                    html.Div(style={"flex": "1.2", "minWidth": "450px"}, children=[dcc.Graph(figure=ma_fig)]),
+                    html.Div(style={"flex": "0.8", "minWidth": "350px"}, children=[dcc.Graph(figure=box_fig)]),
+                ]),
+            ]))
+
+    # ============================================================
+    # SECTION 8: Summary Statistics Table
+    # ============================================================
+    summary_rows = [
+        {"Metric": "Total features (common)", "Value_A": n_total, "Value_B": n_total},
+        {"Metric": f"Detected (>= 50% samples)", "Value_A": int(det_a.sum()), "Value_B": int(det_b.sum())},
+        {"Metric": "Detection rate (mean)", "Value_A": f"{det_rate_a.mean():.3f}", "Value_B": f"{det_rate_b.mean():.3f}"},
+        {"Metric": "Mean ratio (detected)", "Value_A": f"{mean_a[det_a].mean():.5f}", "Value_B": f"{mean_b[det_b].mean():.5f}"},
+        {"Metric": "Median CV", "Value_A": f"{cv_a.median():.3f}" if not cv_a.dropna().empty else "N/A",
+                                "Value_B": f"{cv_b.median():.3f}" if not cv_b.dropna().empty else "N/A"},
+        {"Metric": "Samples", "Value_A": dfa.shape[1], "Value_B": dfb.shape[1]},
+        {"Metric": "Groups", "Value_A": meta_a["Group"].nunique() if not meta_a.empty else "?",
+                              "Value_B": meta_b["Group"].nunique() if not meta_b.empty else "?"},
+    ]
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df.columns = ["Metric", nd_a, nd_b]
+
+    children.append(html.Div(style=CS, children=[
+        _st("Summary Statistics",
+            f"Side-by-side comparison of {exp_a} vs {exp_b}", icon="\U0001F4CB"),
+        make_table(summary_df, "ndebug-summary-table"),
+    ]))
+
+    return html.Div(children)
+
+
+# ======================================================================
 # TAB: COMPARISONS
 # ======================================================================
 
@@ -4310,7 +4811,7 @@ def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, ad
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.9")
+    print("  EpiProfile-Plants Dashboard v3.10")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")

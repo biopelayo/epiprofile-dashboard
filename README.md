@@ -6,13 +6,13 @@ Interactive, publication-quality visualization dashboard for **EpiProfile-Plants
 ![Dash](https://img.shields.io/badge/Dash-4.0+-14532d?logo=plotly&logoColor=white)
 ![Plotly](https://img.shields.io/badge/Plotly-6.0+-3F4F75?logo=plotly&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-22c55e)
-![Version](https://img.shields.io/badge/Version-3.9-0f1f13)
+![Version](https://img.shields.io/badge/Version-3.10-0f1f13)
 
 ---
 
 ## Overview
 
-EpiProfile-Plants Dashboard provides **12 interconnected analysis modules** for exploring histone post-translational modification (PTM) data from mass spectrometry experiments. It correctly handles the three-level hierarchical structure of EpiProfile output and provides non-parametric statistics, PCA, biclustering, co-occurrence analysis, and R-ready data export -- all from a web browser with no programming required.
+EpiProfile-Plants Dashboard provides **13 interconnected analysis modules** for exploring histone post-translational modification (PTM) data from mass spectrometry experiments. It correctly handles the three-level hierarchical structure of EpiProfile output and provides non-parametric statistics, PCA, biclustering, co-occurrence analysis, and R-ready data export -- all from a web browser with no programming required.
 
 > See [WHITEPAPER.md](WHITEPAPER.md) for the full technical documentation.
 
@@ -47,6 +47,7 @@ The dashboard classifies EpiProfile output into three biological levels:
 | **Phenodata** | Sample metadata viewer |
 | **Sample Browser** | PDF chromatograms, per-sample profiles |
 | **Export to R** | Filtered data + R script bundle (ZIP) |
+| **ndebug Compare** | Detection efficacy comparison between ndebug modes |
 | **Analysis Log** | SQLite-backed audit trail |
 
 ---
@@ -175,7 +176,7 @@ epiprofile-dashboard/
 If you use this dashboard in your research, please cite:
 
 ```
-EpiProfile-Plants Dashboard v3.9
+EpiProfile-Plants Dashboard v3.10
 https://github.com/biopelayo/epiprofile-dashboard
 ```
 
