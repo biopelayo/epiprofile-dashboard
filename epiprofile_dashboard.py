@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.6 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.7 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -10,7 +10,8 @@ Properly classifies histone data into three levels:
   SeqVar = sequence variants per region (from histone_ratios.xls, variant block)
 
 Features: SQLite analysis tracking, biclustering, data export, adaptive sizing,
-          full upload validation, analysis logging, classification filters.
+          full upload validation, analysis logging, classification filters,
+          areas normalization (log2+QN), R-ready export bundles.
 
 Usage:
   python epiprofile_dashboard.py <dir1> [dir2] ...
@@ -164,7 +165,7 @@ ALT_RATIOS = {
     },
 }
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.6")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.7")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -858,7 +859,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                 html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"32px","fontWeight":"800",
                          "letterSpacing":"-0.5px","color":"white","lineHeight":"1.1"}),
                 html.Div(style={"display":"flex","gap":"10px","alignItems":"center","marginTop":"4px"}, children=[
-                    html.Span("PTM Dashboard v3.6", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
+                    html.Span("PTM Dashboard v3.7", style={"color":"#bbf7d0","fontSize":"14px","fontWeight":"500"}),
                     html.Span("|", style={"color":"rgba(255,255,255,0.4)"}),
                     html.Span("hPTM", style={"background":"rgba(255,255,255,0.15)","padding":"2px 8px",
                               "borderRadius":"4px","fontSize":"12px","fontWeight":"600"}),
@@ -940,6 +941,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
         dcc.Tab(label="Comparisons", value="tab-cmp", style=ts, selected_style=tss),
         dcc.Tab(label="Phenodata", value="tab-pheno", style=ts, selected_style=tss),
         dcc.Tab(label="Sample Browser", value="tab-browse", style=ts, selected_style=tss),
+        dcc.Tab(label="Export to R", value="tab-export", style=ts, selected_style=tss),
         dcc.Tab(label="Analysis Log", value="tab-log", style=ts, selected_style=tss),
     ]),
     html.Div(id="tab-out", style={"padding":"28px 40px","maxWidth":"1700px","margin":"0 auto"}),
@@ -949,7 +951,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
     html.Div(style={"textAlign":"center","padding":"24px","color":"#166534","fontSize":"13px",
                      "background":"linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%)",
                      "borderTop":"2px solid #bbf7d0","marginTop":"40px"}, children=[
-        html.Span("EpiProfile-Plants v3.6 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
+        html.Span("EpiProfile-Plants v3.7 | Histone PTM Quantification Dashboard | ", style={"fontWeight":"500"}),
         html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
                style={"color":"#15803d","textDecoration":"none","fontWeight":"700"}, target="_blank"),
     ]),
@@ -974,7 +976,7 @@ def _sp(p):
     return p
 
 @callback(Output("desc-bar","children"), Input("cur-exp","data"), Input("cur-palette","data"))
-def _db(e, pal):
+def _desc_bar(e, pal):
     desc = EXP_DATA[e].get("description","") if e and e in EXP_DATA else ""
     pal_name = pal if pal else "EpiProfile (default)"
     return f"{desc}  |  Palette: {pal_name}"
@@ -1067,6 +1069,7 @@ def _rt(tab, exp, pal):
     d = EXP_DATA[exp]
     try:
         if tab == "tab-log": return tab_log(d, exp)
+        if tab == "tab-export": return tab_export(d)
         return {"tab-hpf":tab_hpf,"tab-hptm":tab_hptm,"tab-qc":tab_qc,
                 "tab-pca":tab_pca,"tab-stats":tab_stats,"tab-upset":tab_upset,
                 "tab-region":tab_region,"tab-cmp":tab_cmp,"tab-pheno":tab_pheno,
@@ -1761,18 +1764,25 @@ def _pca_content(source, exp, pal):
 # TAB: STATISTICS
 # ======================================================================
 
-def _enrich_stats(res, groups):
-    """Add classification columns to statistics results."""
+def _enrich_stats(res, groups, is_log=False):
+    """Add classification columns to statistics results.
+    is_log: if True, data is log-scale so FC = difference of means."""
     histone_col, ptm_type_col, direction_col = [], [], []
     for _, row in res.iterrows():
         h, t = classify_ptm_name(row["PTM"])
         histone_col.append(h); ptm_type_col.append(t)
         means = [row.get(f"mean_{g}", np.nan) for g in groups]
-        means_valid = [(g, m) for g, m in zip(groups, means) if not np.isnan(m) and m > 0]
+        if is_log:
+            means_valid = [(g, m) for g, m in zip(groups, means) if not np.isnan(m) and np.isfinite(m)]
+        else:
+            means_valid = [(g, m) for g, m in zip(groups, means) if not np.isnan(m) and m > 0]
         if len(means_valid) >= 2:
             max_g = max(means_valid, key=lambda x: x[1])
             min_g = min(means_valid, key=lambda x: x[1])
-            fc = np.log2(max_g[1] / (min_g[1] + 1e-10))
+            if is_log:
+                fc = max_g[1] - min_g[1]  # already log-scale
+            else:
+                fc = np.log2(max_g[1] / (min_g[1] + 1e-10))
             direction_col.append(f"Up in {max_g[0]}" if fc > 0.5 else f"Down in {max_g[0]}" if fc < -0.5 else "Unchanged")
         else:
             direction_col.append("N/A")
@@ -1871,7 +1881,7 @@ def _stats_filtered(source, design, show, classify, fdr_log, exp):
     res = robust_group_test(df, meta, groups, is_log=is_log)
     if res.empty: return html.P("Could not compute statistics.", style={"color":C["red"]})
 
-    res = _enrich_stats(res, groups)
+    res = _enrich_stats(res, groups, is_log=is_log)
 
     # Compute FC for volcano
     fc_list = []
@@ -1889,7 +1899,7 @@ def _stats_filtered(source, design, show, classify, fdr_log, exp):
 
     n_total = len(res)
     n_sig = int((res["KW_FDR"] < fdr_thresh).sum())
-    n_up = int(res["Direction"].str.startswith("Up").sum() & (res["KW_FDR"] < fdr_thresh))
+    n_up = int((res["Direction"].str.startswith("Up") & (res["KW_FDR"] < fdr_thresh)).sum())
     n_down = n_sig - n_up
 
     # Apply show filter
@@ -1984,18 +1994,49 @@ def _stats_filtered(source, design, show, classify, fdr_log, exp):
 
 
 @callback(Output("download-data","data"),
-          Input("stats-export","n_clicks"), State("cur-exp","data"), prevent_initial_call=True)
-def _stats_export(n, exp):
+          Input("stats-export","n_clicks"),
+          State("stats-source","value"), State("stats-design","value"),
+          State("stats-show","value"), State("stats-fdr","value"),
+          State("cur-exp","data"), prevent_initial_call=True)
+def _stats_export(n, source, design, show, fdr_log, exp):
     if not n or not exp or exp not in EXP_DATA: return no_update
-    d = EXP_DATA[exp]; df = d.get("hptm", d.get("hpf")); meta = d.get("metadata", pd.DataFrame())
+    d = EXP_DATA[exp]; df = _get_data_source(d, source); meta = d.get("metadata", pd.DataFrame())
+    is_log = source in ("areas_norm", "areas_log2")
     if df is None: return no_update
+    fdr_thresh = 10 ** fdr_log if fdr_log else 0.05
+    # Apply design filter
+    if design and design not in ("All", "none") and "Design" in meta.columns:
+        meta = meta[meta["Design"].astype(str) == str(design)].copy()
+        samps = meta["Sample"].tolist()
+        cols = [c for c in df.columns if c in samps]; df = df[cols]
     groups = sorted(meta["Group"].unique()) if not meta.empty else []
     if len(groups) < 2: return no_update
-    res = robust_group_test(df, meta, groups)
+    res = robust_group_test(df, meta, groups, is_log=is_log)
     if res.empty: return no_update
-    res = _enrich_stats(res, groups)
-    fname = f"{exp.split('(')[0].strip()}_statistics_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-    log_analysis(exp, "export_stats", {"format":"csv","n_rows":len(res)}, len(res), 0, f"Exported {len(res)} rows")
+    res = _enrich_stats(res, groups, is_log=is_log)
+    # Compute FC
+    fc_list = []
+    for _, row in res.iterrows():
+        means = [row.get(f"mean_{g}", np.nan) for g in groups]
+        means = [m for m in means if not np.isnan(m)]
+        if is_log:
+            means = [m for m in means if np.isfinite(m)]
+            fc_list.append(max(means) - min(means) if len(means) >= 2 else 0)
+        else:
+            means = [m for m in means if m > 0]
+            fc_list.append(np.log2(max(means) / min(means)) if len(means) >= 2 else 0)
+    res["maxLog2FC"] = fc_list
+    # Apply show filter
+    if show == "sig":
+        res = res[res["KW_FDR"] < fdr_thresh]
+    elif show == "up":
+        res = res[(res["KW_FDR"] < fdr_thresh) & res["Direction"].str.startswith("Up")]
+    elif show == "down":
+        res = res[(res["KW_FDR"] < fdr_thresh) & ~res["Direction"].str.startswith("Up")]
+    src_label = source if source else "ratios"
+    fname = f"{exp.split('(')[0].strip()}_stats_{src_label}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    log_analysis(exp, "export_stats", {"format":"csv","source":src_label,"n_rows":len(res)},
+                 len(res), 0, f"Exported {len(res)} rows ({src_label})")
     return dcc.send_data_frame(res.to_csv, fname, index=False)
 
 
@@ -2677,8 +2718,10 @@ def _bi(f, exp):
 def tab_log(d, exp):
     """Analysis history, session info, upload log."""
     session = get_session_info()
-    history = get_analysis_history(experiment=exp, limit=100)
-    uploads = get_upload_history(limit=50)
+    hist_df = get_analysis_history(experiment=exp, limit=100)
+    upl_df = get_upload_history(limit=50)
+    has_history = hist_df is not None and not hist_df.empty
+    has_uploads = upl_df is not None and not upl_df.empty
 
     # Session info card
     sess_card = html.Div(style={**CS,"display":"flex","gap":"16px","flexWrap":"wrap","marginBottom":"16px"}, children=[
@@ -2689,9 +2732,8 @@ def tab_log(d, exp):
     ])
 
     # Analysis history table
-    if history:
-        hist_df = pd.DataFrame(history,
-            columns=["ID","Experiment","Type","Parameters","Features","Significant","Summary","Duration(ms)","Timestamp"])
+    if has_history:
+        hist_df.columns = ["ID","Experiment","Type","Parameters","Features","Significant","Summary","Duration(ms)","Timestamp"]
         hist_table = html.Div(style=CS, children=[
             _st("Analysis History", f"Last {len(hist_df)} analyses for {exp}"),
             make_table(hist_df, "log-hist-table")])
@@ -2699,9 +2741,8 @@ def tab_log(d, exp):
         hist_table = html.Div(style=CS, children=[html.P("No analyses recorded yet.", style={"color":C["muted"]})])
 
     # Upload history table
-    if uploads:
-        upl_df = pd.DataFrame(uploads,
-            columns=["ID","Experiment","Filename","Type","Rows","Cols","Status","Message","Timestamp"])
+    if has_uploads:
+        upl_df.columns = ["ID","Experiment","Filename","Type","Rows","Cols","Status","Message","Timestamp"]
         upl_table = html.Div(style=CS, children=[
             _st("Upload History", f"Last {len(upl_df)} uploads"),
             make_table(upl_df, "log-upl-table")])
@@ -2709,7 +2750,7 @@ def tab_log(d, exp):
         upl_table = html.Div(style=CS, children=[html.P("No uploads recorded yet.", style={"color":C["muted"]})])
 
     # Analysis type breakdown chart
-    if history:
+    if has_history:
         type_counts = hist_df["Type"].value_counts()
         pie_fig = px.pie(values=type_counts.values, names=type_counts.index,
                          color_discrete_sequence=GC, title="Analysis Types")
@@ -2744,12 +2785,538 @@ def tab_log(d, exp):
           Input("log-export","n_clicks"), State("cur-exp","data"), prevent_initial_call=True)
 def _log_export(n, exp):
     if not n: return no_update
-    history = get_analysis_history(experiment=exp, limit=1000)
-    if not history: return no_update
-    hist_df = pd.DataFrame(history,
-        columns=["ID","Experiment","Type","Parameters","Features","Significant","Summary","Duration(ms)","Timestamp"])
+    hist_df = get_analysis_history(experiment=exp, limit=1000)
+    if hist_df is None or hist_df.empty: return no_update
+    hist_df.columns = ["ID","Experiment","Type","Parameters","Features","Significant","Summary","Duration(ms)","Timestamp"]
     fname = f"analysis_log_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
     return dcc.send_data_frame(hist_df.to_csv, fname, index=False)
+
+
+# ======================================================================
+# TAB: EXPORT TO R
+# ======================================================================
+
+def tab_export(d):
+    """Comprehensive export with user-defined filters and R-ready formats."""
+    meta = d.get("metadata", pd.DataFrame())
+    has_areas = "areas_norm" in d and d["areas_norm"] is not None
+    groups = sorted(meta["Group"].unique()) if not meta.empty else []
+    designs = sorted(meta["Design"].unique()) if "Design" in meta.columns and meta["Design"].nunique() > 1 else []
+
+    # Data source options
+    source_opts = [
+        {"label": "hPTM Ratios (single PTMs)", "value": "hptm"},
+        {"label": "hPF Ratios (peptidoforms)", "value": "hpf"},
+    ]
+    if has_areas:
+        source_opts.extend([
+            {"label": "hPF Areas (log2 + QN)", "value": "areas_norm"},
+            {"label": "hPF Areas (log2 only)", "value": "areas_log2"},
+            {"label": "hPF Areas (raw)", "value": "areas"},
+            {"label": "Retention Times (RT)", "value": "rt"},
+        ])
+
+    # Format options
+    format_opts = [
+        {"label": "CSV (comma-separated)", "value": "csv"},
+        {"label": "TSV (tab-separated)", "value": "tsv"},
+        {"label": "R Script + Data (ready-to-load .R + .csv)", "value": "r_bundle"},
+    ]
+
+    # Build filters
+    filter_children = [
+        html.Div(style={"flex":"1","minWidth":"250px"}, children=[
+            _lbl("Data Source"),
+            dcc.Dropdown(id="exp-source", options=source_opts, value="hptm", clearable=False, style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Export Format"),
+            dcc.Dropdown(id="exp-format", options=format_opts, value="csv", clearable=False, style=DS)]),
+    ]
+
+    if designs:
+        filter_children.append(html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Design / Strain"),
+            dcc.Dropdown(id="exp-design",
+                options=[{"label":"All designs","value":"All"}]+[{"label":f"Design {x}","value":str(x)} for x in designs],
+                value="All", clearable=False, style=DS)]))
+    else:
+        filter_children.append(html.Div(dcc.Store(id="exp-design", data="All")))
+
+    filter_children.extend([
+        html.Div(style={"flex":"1","minWidth":"250px"}, children=[
+            _lbl("Groups (select to filter)"),
+            dcc.Dropdown(id="exp-groups",
+                options=[{"label":g,"value":g} for g in groups],
+                value=[], multi=True, placeholder="All groups (default)", style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Feature Filter"),
+            dcc.Dropdown(id="exp-feature-filter",
+                options=[{"label":"All features","value":"all"},
+                         {"label":"Histone H3 only","value":"H3"},
+                         {"label":"Histone H3.3 only","value":"H3.3"},
+                         {"label":"Histone H4 only","value":"H4"},
+                         {"label":"Methylation only","value":"Methylation"},
+                         {"label":"Acetylation only","value":"Acetylation"},
+                         {"label":"Non-zero only (>1 sample)","value":"nonzero"}],
+                value="all", clearable=False, style=DS)]),
+    ])
+
+    # Include statistics toggle
+    opts_children = [
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Include Statistics"),
+            dcc.Dropdown(id="exp-include-stats",
+                options=[{"label":"Data only","value":"data"},
+                         {"label":"Data + KW statistics","value":"stats"},
+                         {"label":"Data + KW + pairwise MW","value":"full"}],
+                value="data", clearable=False, style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Normalization Info"),
+            dcc.Checklist(id="exp-add-meta",
+                options=[{"label":" Include sample metadata sheet","value":"meta"},
+                         {"label":" Include normalization summary","value":"norm"}],
+                value=["meta"], inline=False,
+                style={"fontSize":"13px","color":C["text"],"marginTop":"6px"})]),
+    ]
+
+    # Export button
+    btn_style = {"padding":"12px 28px","borderRadius":"8px","border":"none",
+                 "backgroundColor":C["accent"],"color":"white","fontWeight":"700",
+                 "cursor":"pointer","fontSize":"15px","letterSpacing":"0.5px"}
+
+    return html.Div([
+        _st("Export Data for R / External Analysis",
+            "Filter data by source, groups, features | Export as CSV, TSV, or R-ready bundle"),
+        html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap"},
+                 children=filter_children),
+        html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap","marginTop":"12px"},
+                 children=opts_children),
+        html.Div(style={"display":"flex","gap":"16px","marginTop":"20px","alignItems":"center"}, children=[
+            html.Button("Export Data", id="exp-go", n_clicks=0, style=btn_style),
+            html.Button("Preview (first 20 rows)", id="exp-preview", n_clicks=0,
+                        style={**btn_style, "backgroundColor":C["h3"]}),
+        ]),
+        html.Div(id="exp-status", style={"marginTop":"12px"}),
+        html.Div(id="exp-preview-out", style={"marginTop":"16px"}),
+    ])
+
+
+def _build_export_data(d, source, design, groups_filter, feature_filter, include_stats, meta_full):
+    """Build export DataFrame(s) based on user filters. Returns dict of {name: DataFrame}."""
+    meta = meta_full.copy()
+
+    # Resolve data source
+    if source == "areas":
+        df = d.get("areas")
+    elif source == "rt":
+        df = d.get("rt")
+    else:
+        df = _get_data_source(d, source)
+    if df is None:
+        return None, "Selected data source not available for this experiment."
+
+    is_log = source in ("areas_norm", "areas_log2")
+
+    # Filter by design
+    if design and design != "All" and "Design" in meta.columns:
+        meta = meta[meta["Design"].astype(str) == str(design)].copy()
+        samps = meta["Sample"].tolist()
+        cols = [c for c in df.columns if c in samps]
+        df = df[cols]
+
+    # Filter by groups
+    if groups_filter and len(groups_filter) > 0:
+        meta = meta[meta["Group"].isin(groups_filter)].copy()
+        samps = meta["Sample"].tolist()
+        cols = [c for c in df.columns if c in samps]
+        df = df[cols]
+
+    # Filter features
+    if feature_filter and feature_filter != "all":
+        if feature_filter == "nonzero":
+            if is_log:
+                nonzero_mask = df.apply(lambda row: row.dropna()[np.isfinite(row.dropna())].shape[0] >= 1, axis=1)
+            else:
+                nonzero_mask = df.apply(lambda row: (row.dropna() != 0).sum() >= 1, axis=1)
+            df = df[nonzero_mask]
+        elif feature_filter in ("H3", "H3.3", "H4"):
+            keep = [i for i in df.index if classify_ptm_name(i)[0] == feature_filter]
+            df = df.loc[keep]
+        elif feature_filter in ("Methylation", "Acetylation"):
+            keep = [i for i in df.index if classify_ptm_name(i)[1] == feature_filter]
+            df = df.loc[keep]
+
+    if df.empty:
+        return None, "No data after applying filters."
+
+    groups = sorted(meta["Group"].unique())
+    sheets = {"data": df}
+
+    # Add statistics if requested
+    if include_stats in ("stats", "full") and len(groups) >= 2 and source != "rt":
+        stats_df = robust_group_test(df, meta, groups, is_log=is_log)
+        if not stats_df.empty:
+            stats_df = _enrich_stats(stats_df, groups, is_log=is_log)
+            # Add FC column
+            fc_list = []
+            for _, row in stats_df.iterrows():
+                means = [row.get(f"mean_{g}", np.nan) for g in groups]
+                means = [m for m in means if not np.isnan(m)]
+                if is_log:
+                    means = [m for m in means if np.isfinite(m)]
+                    fc_list.append(max(means) - min(means) if len(means) >= 2 else 0)
+                else:
+                    means = [m for m in means if m > 0]
+                    fc_list.append(np.log2(max(means) / min(means)) if len(means) >= 2 else 0)
+            stats_df["maxLog2FC"] = fc_list
+            sheets["statistics"] = stats_df
+
+        # Full: add all pairwise comparisons
+        if include_stats == "full" and len(groups) >= 2:
+            pw_frames = []
+            for g1, g2 in combinations(groups, 2):
+                mw = pairwise_mw(df, meta, g1, g2, is_log=is_log)
+                if not mw.empty:
+                    mw.insert(0, "Comparison", f"{g1} vs {g2}")
+                    pw_frames.append(mw)
+            if pw_frames:
+                sheets["pairwise"] = pd.concat(pw_frames, ignore_index=True)
+
+    return sheets, None
+
+
+def _generate_r_script(exp_name, source, sheets, meta_df):
+    """Generate R script that loads the exported data and sets up analysis."""
+    data_file = f"{exp_name}_data.csv"
+    stats_file = f"{exp_name}_statistics.csv" if "statistics" in sheets else None
+    pw_file = f"{exp_name}_pairwise.csv" if "pairwise" in sheets else None
+    meta_file = f"{exp_name}_metadata.csv"
+    is_log = source in ("areas_norm", "areas_log2")
+
+    groups = sorted(meta_df["Group"].unique())
+    n_samp = len(meta_df)
+    n_feat = len(sheets["data"])
+
+    lines = [
+        "# ========================================================",
+        f"# EpiProfile-Plants: R Analysis Script",
+        f"# Experiment: {exp_name}",
+        f"# Data source: {source}",
+        f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"# Features: {n_feat} | Samples: {n_samp} | Groups: {len(groups)}",
+        "# ========================================================",
+        "",
+        "# Required packages (install if needed):",
+        "# install.packages(c('ggplot2', 'pheatmap', 'dplyr', 'tidyr'))",
+        "",
+        "library(ggplot2)",
+        "library(pheatmap)",
+        "library(dplyr)",
+        "library(tidyr)",
+        "",
+        "# ---- Load Data ----",
+        f'data <- read.csv("{data_file}", row.names = 1, check.names = FALSE)',
+        f'metadata <- read.csv("{meta_file}", stringsAsFactors = TRUE)',
+        "",
+        "# Verify dimensions",
+        f'cat("Data matrix:", nrow(data), "features x", ncol(data), "samples\\n")',
+        f'cat("Metadata:", nrow(metadata), "samples\\n")',
+        f'cat("Groups:", paste(levels(metadata$Group), collapse=", "), "\\n")',
+        "",
+    ]
+
+    if stats_file:
+        lines.extend([
+            "# ---- Load Statistics (Kruskal-Wallis + FDR) ----",
+            f'stats <- read.csv("{stats_file}")',
+            'cat("Significant features (FDR < 0.05):", sum(stats$KW_FDR < 0.05, na.rm=TRUE), "\\n")',
+            "",
+        ])
+
+    if pw_file:
+        lines.extend([
+            "# ---- Load Pairwise Comparisons (Mann-Whitney) ----",
+            f'pairwise <- read.csv("{pw_file}")',
+            'cat("Pairwise comparisons:", nrow(pairwise), "\\n")',
+            "",
+        ])
+
+    lines.extend([
+        "# ---- Data Properties ----",
+        f'is_log_scale <- {"TRUE" if is_log else "FALSE"}',
+        f'data_source <- "{source}"',
+        "",
+        "# ---- Heatmap ----",
+        "# Annotation for columns (samples)",
+        "ann_col <- data.frame(Group = metadata$Group, row.names = metadata$Sample)",
+        "",
+        "# Filter to features with variance",
+        "data_var <- data[apply(data, 1, function(x) var(x, na.rm=TRUE)) > 0, , drop=FALSE]",
+        "",
+        "if (nrow(data_var) > 0) {",
+        '  pheatmap(as.matrix(data_var),',
+        '           annotation_col = ann_col,',
+        '           scale = "row",',
+        '           clustering_distance_rows = "correlation",',
+        '           clustering_distance_cols = "correlation",',
+        '           show_colnames = FALSE,',
+        f'           main = "EpiProfile: {source}")',
+        "}",
+        "",
+        "# ---- PCA ----",
+        "data_complete <- data_var[complete.cases(data_var), , drop=FALSE]",
+        "if (nrow(data_complete) >= 3) {",
+        "  pca <- prcomp(t(as.matrix(data_complete)), scale. = TRUE)",
+        "  pca_df <- data.frame(pca$x[, 1:min(3, ncol(pca$x))], Group = metadata$Group)",
+        "",
+        '  p_pca <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Group)) +',
+        '    geom_point(size = 3) +',
+        '    stat_ellipse(level = 0.95, linetype = "dashed") +',
+        '    theme_minimal() +',
+        f'    labs(title = "PCA: {source}",',
+        '         x = paste0("PC1 (", round(summary(pca)$importance[2,1]*100, 1), "%)"),',
+        '         y = paste0("PC2 (", round(summary(pca)$importance[2,2]*100, 1), "%)"))',
+        "  print(p_pca)",
+        "}",
+        "",
+        "# ---- Boxplot of top features ----",
+    ])
+
+    if stats_file:
+        lines.extend([
+            "top_features <- head(stats$PTM[order(stats$KW_pval)], 9)",
+        ])
+    else:
+        lines.extend([
+            "# No statistics available; use first 9 features",
+            "top_features <- head(rownames(data_var), 9)",
+        ])
+
+    lines.extend([
+        "data_long <- data[top_features, , drop=FALSE] %>%",
+        "  tibble::rownames_to_column('Feature') %>%",
+        "  pivot_longer(-Feature, names_to = 'Sample', values_to = 'Value') %>%",
+        "  left_join(metadata, by = 'Sample')",
+        "",
+        "p_box <- ggplot(data_long, aes(x = Group, y = Value, fill = Group)) +",
+        "  geom_boxplot(outlier.shape = NA) +",
+        "  geom_jitter(width = 0.2, alpha = 0.5, size = 1) +",
+        "  facet_wrap(~Feature, scales = 'free_y', ncol = 3) +",
+        "  theme_minimal() +",
+        "  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +",
+        f'  labs(title = "Top Features by Group", y = "{source}")',
+        "print(p_box)",
+        "",
+    ])
+
+    if stats_file:
+        lines.extend([
+            "# ---- Volcano Plot ----",
+            "if ('maxLog2FC' %in% colnames(stats)) {",
+            "  stats$negLog10FDR <- -log10(stats$KW_FDR + 1e-300)",
+            "  stats$Significant <- stats$KW_FDR < 0.05",
+            "  p_vol <- ggplot(stats, aes(x = maxLog2FC, y = negLog10FDR, color = Significant)) +",
+            "    geom_point(alpha = 0.7) +",
+            '    scale_color_manual(values = c("grey60", "red")) +',
+            "    geom_hline(yintercept = -log10(0.05), linetype = 'dashed', color = 'red') +",
+            "    theme_minimal() +",
+            '    labs(title = "Volcano Plot", x = "max |log2(FC)|", y = "-log10(FDR)")',
+            "  print(p_vol)",
+            "}",
+            "",
+        ])
+
+    lines.extend([
+        "# ---- Save session ----",
+        f'# save.image("{exp_name}_session.RData")',
+        f'cat("\\nAnalysis ready. {n_feat} features x {n_samp} samples loaded.\\n")',
+    ])
+
+    return "\n".join(lines)
+
+
+@callback(Output("exp-preview-out", "children"),
+          Input("exp-preview", "n_clicks"),
+          State("exp-source","value"), State("exp-design","value"),
+          State("exp-groups","value"), State("exp-feature-filter","value"),
+          State("exp-include-stats","value"), State("exp-add-meta","value"),
+          State("cur-exp","data"), prevent_initial_call=True)
+def _exp_preview(n, source, design, groups_sel, feat_filter, inc_stats, add_meta, exp):
+    if not n or not exp or exp not in EXP_DATA: return html.P("N/A")
+    d = EXP_DATA[exp]; meta = d.get("metadata", pd.DataFrame())
+
+    sheets, err = _build_export_data(d, source, design, groups_sel, feat_filter, inc_stats, meta)
+    if err: return html.Div(style=CS, children=[html.P(err, style={"color":C["red"]})])
+
+    children = []
+    for name, df in sheets.items():
+        preview = df.head(20)
+        n_rows, n_cols = df.shape
+        children.append(html.Div(style=CS, children=[
+            _st(f"Preview: {name}", f"{n_rows} rows x {n_cols} columns (showing first 20)"),
+            make_table(preview.reset_index() if name == "data" else preview, f"exp-tbl-{name}")
+        ]))
+
+    # Show what files would be generated
+    exp_name = exp.split("(")[0].strip().replace(" ","_")
+    file_list = [f"{exp_name}_data.csv"]
+    if "statistics" in sheets: file_list.append(f"{exp_name}_statistics.csv")
+    if "pairwise" in sheets: file_list.append(f"{exp_name}_pairwise.csv")
+    if add_meta and "meta" in add_meta: file_list.append(f"{exp_name}_metadata.csv")
+
+    src = source if source else "ratios"
+    fmt_info = "R bundle (.zip with .R script + .csv files)" if True else "CSV"
+
+    children.insert(0, html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"12px"}, children=[
+        _sc("Features", str(sheets["data"].shape[0]), C["accent"]),
+        _sc("Samples", str(sheets["data"].shape[1]), C["green"]),
+        _sc("Source", src, C["h3"]),
+        _sc("Sheets", str(len(sheets)), C["h4"]),
+    ]))
+
+    return html.Div(children)
+
+
+@callback(Output("download-data","data", allow_duplicate=True),
+          Output("exp-status","children"),
+          Input("exp-go","n_clicks"),
+          State("exp-source","value"), State("exp-format","value"),
+          State("exp-design","value"), State("exp-groups","value"),
+          State("exp-feature-filter","value"), State("exp-include-stats","value"),
+          State("exp-add-meta","value"), State("cur-exp","data"),
+          prevent_initial_call=True)
+def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, add_meta, exp):
+    if not n or not exp or exp not in EXP_DATA: return no_update, ""
+    d = EXP_DATA[exp]; meta = d.get("metadata", pd.DataFrame())
+    t0 = time.time()
+
+    sheets, err = _build_export_data(d, source, design, groups_sel, feat_filter, inc_stats, meta)
+    if err: return no_update, html.P(err, style={"color":C["red"]})
+
+    exp_name = exp.split("(")[0].strip().replace(" ","_")
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    sep_char = "," if fmt == "csv" else "\t"
+    ext = "csv" if fmt == "csv" else "tsv"
+
+    if fmt == "r_bundle":
+        # Create a ZIP with R script + CSV data files + metadata
+        import zipfile
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Data file
+            data_csv = sheets["data"].to_csv()
+            zf.writestr(f"{exp_name}_data.csv", data_csv)
+
+            # Statistics file
+            if "statistics" in sheets:
+                zf.writestr(f"{exp_name}_statistics.csv", sheets["statistics"].to_csv(index=False))
+
+            # Pairwise file
+            if "pairwise" in sheets:
+                zf.writestr(f"{exp_name}_pairwise.csv", sheets["pairwise"].to_csv(index=False))
+
+            # Metadata
+            if add_meta and "meta" in add_meta:
+                # Filter metadata to match exported samples
+                export_samps = list(sheets["data"].columns)
+                meta_export = meta[meta["Sample"].isin(export_samps)].copy()
+                zf.writestr(f"{exp_name}_metadata.csv", meta_export.to_csv(index=False))
+
+            # Normalization summary
+            if add_meta and "norm" in add_meta:
+                norm_info = [
+                    f"EpiProfile-Plants Export Summary",
+                    f"Experiment: {exp}",
+                    f"Data source: {source}",
+                    f"Date: {datetime.now().isoformat()}",
+                    f"Features: {sheets['data'].shape[0]}",
+                    f"Samples: {sheets['data'].shape[1]}",
+                    f"",
+                ]
+                if source == "areas_norm":
+                    norm_info.extend([
+                        "Normalization pipeline:",
+                        "  1. Raw MS1 peak areas extracted from EpiProfile output",
+                        "  2. Zero values replaced with NaN (missing)",
+                        "  3. Log2 transformation applied",
+                        "  4. Quantile normalization (Bolstad 2003) across samples",
+                        "  5. NaN values preserved (not imputed)",
+                        "",
+                        "Reference: Bolstad BM et al. (2003) Bioinformatics 19(2):185-93",
+                    ])
+                elif source == "areas_log2":
+                    norm_info.extend([
+                        "Normalization pipeline:",
+                        "  1. Raw MS1 peak areas extracted from EpiProfile output",
+                        "  2. Zero values replaced with NaN",
+                        "  3. Log2 transformation applied",
+                        "  4. No quantile normalization (log2 only)",
+                    ])
+                elif source in ("hptm", "hpf", "ratios"):
+                    norm_info.extend([
+                        "Data type: Relative abundance ratios (0-1)",
+                        "  - Calculated by EpiProfile as peak area / total region area",
+                        "  - Compositional data (values sum to ~1.0 per peptide region)",
+                        "  - Note: spurious negative correlations possible due to closure",
+                    ])
+                elif source == "areas":
+                    norm_info.extend([
+                        "Data type: Raw MS1 peak areas (unnormalized)",
+                        "  - Direct EpiProfile output without transformation",
+                        "  - Recommend log2 + quantile normalization before analysis",
+                    ])
+                elif source == "rt":
+                    norm_info.extend([
+                        "Data type: Retention times (minutes)",
+                        "  - Chromatographic elution times from LC-MS/MS",
+                    ])
+                zf.writestr(f"{exp_name}_normalization_info.txt", "\n".join(norm_info))
+
+            # R script
+            r_script = _generate_r_script(exp_name, source, sheets, meta)
+            zf.writestr(f"{exp_name}_analysis.R", r_script)
+
+        buf.seek(0)
+        fname = f"{exp_name}_{source}_R_bundle_{ts}.zip"
+        dur = int((time.time() - t0) * 1000)
+        n_total = sheets["data"].shape[0]
+        log_analysis(exp, "export_r_bundle",
+                     {"source": source, "format": "r_bundle", "n_sheets": len(sheets)},
+                     n_total, 0, f"R bundle: {n_total} features, {len(sheets)} sheets")
+
+        status = html.Div(style={"display":"flex","gap":"12px","alignItems":"center"}, children=[
+            html.Span("Exported!", style={"color":C["green"],"fontWeight":"700","fontSize":"15px"}),
+            html.Span(f"{fname} | {n_total} features | {sheets['data'].shape[1]} samples | {len(sheets)} files | {dur}ms",
+                      style={"color":C["muted"],"fontSize":"13px"}),
+        ])
+        return dcc.send_bytes(buf.getvalue(), fname), status
+
+    else:
+        # CSV or TSV export
+        data_df = sheets["data"]
+        # If stats requested, merge stats columns into data
+        if "statistics" in sheets:
+            stats_cols = sheets["statistics"][["PTM","KW_pval","KW_FDR","maxLog2FC","Direction","Histone","PTM_type"]].copy()
+            data_with_stats = data_df.copy()
+            data_with_stats.index.name = "PTM"
+            merged = data_with_stats.reset_index().merge(stats_cols, on="PTM", how="left").set_index("PTM")
+            export_df = merged
+        else:
+            export_df = data_df
+
+        fname = f"{exp_name}_{source}_{ts}.{ext}"
+        dur = int((time.time() - t0) * 1000)
+        n_total = len(export_df)
+        log_analysis(exp, f"export_{ext}",
+                     {"source": source, "format": ext, "n_rows": n_total},
+                     n_total, 0, f"Exported {n_total} rows as {ext}")
+
+        status = html.Div(style={"display":"flex","gap":"12px","alignItems":"center"}, children=[
+            html.Span("Exported!", style={"color":C["green"],"fontWeight":"700","fontSize":"15px"}),
+            html.Span(f"{fname} | {n_total} features | {dur}ms",
+                      style={"color":C["muted"],"fontSize":"13px"}),
+        ])
+        return dcc.send_data_frame(export_df.to_csv, fname, sep=sep_char), status
 
 
 # ======================================================================
@@ -2758,7 +3325,7 @@ def _log_export(n, exp):
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.6")
+    print("  EpiProfile-Plants Dashboard v3.7")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
