@@ -818,164 +818,158 @@ DEFAULT_EXP = list(EXP_DATA.keys())[0] if EXP_DATA else None
 app = Dash(__name__, suppress_callback_exceptions=True)
 app.title = "EpiProfile-Plants Dashboard"
 
-ts = {"color":"#475569","backgroundColor":"#fff","border":"none",
-      "borderBottom":"3px solid transparent","padding":"14px 24px",
-      "fontSize":"14px","fontWeight":"500","fontFamily":FONT,
-      "transition":"all 0.2s ease","cursor":"pointer"}
-tss = {**ts,"color":C["accent_d"],"borderBottom":f"3px solid {C['accent']}","fontWeight":"700",
-       "backgroundColor":"#ecfdf5"}
+ts = {"color":"#6b7280","backgroundColor":"#fff","border":"none",
+      "borderBottom":"3px solid transparent","padding":"15px 22px",
+      "fontSize":"14.5px","fontWeight":"500","fontFamily":FONT,
+      "transition":"all 0.25s ease","cursor":"pointer","letterSpacing":"0.1px"}
+tss = {**ts,"color":"#0f1f13","borderBottom":"3px solid #22c55e","fontWeight":"700",
+       "backgroundColor":"#f0fdf4","letterSpacing":"0px"}
 
 # ======================================================================
 # LAYOUT
 # ======================================================================
 
 app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","fontFamily":FONT,"color":C["text"]}, children=[
-    # ---- HERO HEADER (light, airy, modern) ----
-    html.Div(style={"background":"linear-gradient(135deg, #22c55e 0%, #4ade80 40%, #86efac 100%)",
+    # ---- HERO HEADER (elegant dark green / black / grey) ----
+    html.Div(style={"background":"linear-gradient(160deg, #0f1f13 0%, #14532d 35%, #166534 60%, #1a7a40 100%)",
                      "padding":"0","color":"white","position":"relative","overflow":"hidden"}, children=[
-        # Decorative circles (very subtle)
-        html.Div(style={"position":"absolute","top":"-50px","right":"-30px","width":"220px","height":"220px",
-                         "borderRadius":"50%","background":"rgba(255,255,255,0.12)"}),
-        html.Div(style={"position":"absolute","bottom":"-40px","left":"8%","width":"140px","height":"140px",
-                         "borderRadius":"50%","background":"rgba(255,255,255,0.08)"}),
-        html.Div(style={"position":"absolute","top":"15px","right":"25%","width":"70px","height":"70px",
-                         "borderRadius":"50%","background":"rgba(255,255,255,0.06)"}),
+        # Decorative accent shapes (subtle emerald glow)
+        html.Div(style={"position":"absolute","top":"-80px","right":"-60px","width":"300px","height":"300px",
+                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(34,197,94,0.15) 0%, transparent 70%)"}),
+        html.Div(style={"position":"absolute","bottom":"-60px","left":"5%","width":"200px","height":"200px",
+                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(74,222,128,0.08) 0%, transparent 70%)"}),
+        html.Div(style={"position":"absolute","top":"20%","right":"30%","width":"100px","height":"100px",
+                         "borderRadius":"50%","background":"radial-gradient(circle, rgba(134,239,172,0.05) 0%, transparent 70%)"}),
+        # Subtle top accent line
+        html.Div(style={"height":"3px","background":"linear-gradient(90deg, transparent 0%, #4ade80 30%, #22c55e 50%, #4ade80 70%, transparent 100%)"}),
         # Main content row
-        html.Div(style={"display":"flex","alignItems":"center","gap":"28px","flexWrap":"wrap",
-                         "position":"relative","zIndex":"1","padding":"32px 48px 14px"}, children=[
-            # Title block (no image)
+        html.Div(style={"display":"flex","alignItems":"center","gap":"36px","flexWrap":"wrap",
+                         "position":"relative","zIndex":"1","padding":"36px 52px 16px"}, children=[
+            # Title block
             html.Div([
-                html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"38px","fontWeight":"800",
-                         "letterSpacing":"-0.5px","color":"white","lineHeight":"1.1"}),
-                html.Div(style={"display":"flex","gap":"10px","alignItems":"center","marginTop":"8px",
+                html.H1("EpiProfile-Plants", style={"margin":"0","fontSize":"44px","fontWeight":"800",
+                         "letterSpacing":"-1px","color":"#fff","lineHeight":"1.05",
+                         "textShadow":"0 2px 12px rgba(0,0,0,0.3)"}),
+                html.Div(style={"display":"flex","gap":"12px","alignItems":"center","marginTop":"10px",
                                  "flexWrap":"wrap"}, children=[
-                    html.Span("Histone PTM Quantification Dashboard", style={"color":"rgba(255,255,255,0.9)",
-                              "fontSize":"14px","fontWeight":"500"}),
-                    html.Span("v3.8", style={"background":"rgba(255,255,255,0.25)","padding":"3px 12px",
-                              "borderRadius":"14px","fontSize":"12px","fontWeight":"700","color":"white",
-                              "border":"1px solid rgba(255,255,255,0.35)"}),
+                    html.Span("Histone PTM Quantification Dashboard", style={"color":"#94a3b8",
+                              "fontSize":"16px","fontWeight":"400","letterSpacing":"0.3px"}),
+                    html.Span("v3.8", style={"background":"#22c55e","padding":"3px 14px",
+                              "borderRadius":"14px","fontSize":"12px","fontWeight":"700","color":"#0f1f13",
+                              "boxShadow":"0 0 10px rgba(34,197,94,0.4)"}),
                 ]),
-                html.Div(style={"display":"flex","gap":"6px","alignItems":"center","marginTop":"10px",
+                html.Div(style={"display":"flex","gap":"8px","alignItems":"center","marginTop":"14px",
                                  "flexWrap":"wrap"}, children=[
-                    html.Span("hPTM", style={"background":"rgba(255,255,255,0.22)","padding":"4px 14px",
-                              "borderRadius":"8px","fontSize":"12px","fontWeight":"600",
-                              "border":"1px solid rgba(255,255,255,0.2)","transition":"all 0.2s"}),
-                    html.Span("hPF", style={"background":"rgba(255,255,255,0.22)","padding":"4px 14px",
-                              "borderRadius":"8px","fontSize":"12px","fontWeight":"600",
-                              "border":"1px solid rgba(255,255,255,0.2)"}),
-                    html.Span("hDP", style={"background":"rgba(255,255,255,0.22)","padding":"4px 14px",
-                              "borderRadius":"8px","fontSize":"12px","fontWeight":"600",
-                              "border":"1px solid rgba(255,255,255,0.2)"}),
-                    html.Span("Areas", style={"background":"rgba(255,255,255,0.22)","padding":"4px 14px",
-                              "borderRadius":"8px","fontSize":"12px","fontWeight":"600",
-                              "border":"1px solid rgba(255,255,255,0.2)"}),
-                    html.Span("RT", style={"background":"rgba(255,255,255,0.22)","padding":"4px 14px",
-                              "borderRadius":"8px","fontSize":"12px","fontWeight":"600",
-                              "border":"1px solid rgba(255,255,255,0.2)"}),
+                    html.Span(t, style={"background":"rgba(255,255,255,0.08)","padding":"5px 16px",
+                              "borderRadius":"6px","fontSize":"13px","fontWeight":"600","color":"#d1d5db",
+                              "border":"1px solid rgba(255,255,255,0.1)","letterSpacing":"0.5px",
+                              "transition":"all 0.2s ease"})
+                    for t in ["hPTM", "hPF", "hDP", "Areas", "RT"]
                 ]),
             ]),
             html.Div(style={"flex":"1","minWidth":"40px"}),
-            # Experiment selector - light glass card
-            html.Div(style={"background":"rgba(255,255,255,0.2)","borderRadius":"16px","padding":"14px 20px",
-                             "border":"1px solid rgba(255,255,255,0.3)","backdropFilter":"blur(12px)",
-                             "boxShadow":"0 4px 16px rgba(0,0,0,0.06)","transition":"all 0.2s"}, children=[
-                html.Span("EXPERIMENT",style={"color":"rgba(255,255,255,0.85)","fontSize":"10px","fontWeight":"700",
-                           "letterSpacing":"1.5px","textTransform":"uppercase","display":"block","marginBottom":"8px"}),
+            # Experiment selector -- dark glass card
+            html.Div(style={"background":"rgba(255,255,255,0.07)","borderRadius":"14px","padding":"16px 22px",
+                             "border":"1px solid rgba(255,255,255,0.12)","backdropFilter":"blur(16px)",
+                             "boxShadow":"0 8px 32px rgba(0,0,0,0.2)"}, children=[
+                html.Span("EXPERIMENT",style={"color":"#86efac","fontSize":"11px","fontWeight":"700",
+                           "letterSpacing":"2px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
                 dcc.Dropdown(id="exp-sel", options=[{"label":k,"value":k} for k in EXP_DATA],
                              value=DEFAULT_EXP, clearable=False,
-                             style={"width":"380px","fontSize":"13px","borderRadius":"10px"}),
+                             style={"width":"380px","fontSize":"14px","borderRadius":"10px"}),
             ]),
-            # Color palette selector - light glass card
-            html.Div(style={"background":"rgba(255,255,255,0.2)","borderRadius":"16px","padding":"14px 20px",
-                             "border":"1px solid rgba(255,255,255,0.3)","backdropFilter":"blur(12px)",
-                             "boxShadow":"0 4px 16px rgba(0,0,0,0.06)","transition":"all 0.2s"}, children=[
-                html.Span("PALETTE",style={"color":"rgba(255,255,255,0.85)","fontSize":"10px","fontWeight":"700",
-                           "letterSpacing":"1.5px","textTransform":"uppercase","display":"block","marginBottom":"8px"}),
+            # Color palette selector -- dark glass card
+            html.Div(style={"background":"rgba(255,255,255,0.07)","borderRadius":"14px","padding":"16px 22px",
+                             "border":"1px solid rgba(255,255,255,0.12)","backdropFilter":"blur(16px)",
+                             "boxShadow":"0 8px 32px rgba(0,0,0,0.2)"}, children=[
+                html.Span("PALETTE",style={"color":"#86efac","fontSize":"11px","fontWeight":"700",
+                           "letterSpacing":"2px","textTransform":"uppercase","display":"block","marginBottom":"10px"}),
                 dcc.Dropdown(id="palette-sel",
                              options=[{"label":k,"value":k} for k in PALETTES],
                              value="EpiProfile (default)", clearable=False,
-                             style={"width":"210px","fontSize":"13px","borderRadius":"10px"}),
+                             style={"width":"220px","fontSize":"14px","borderRadius":"10px"}),
             ]),
         ]),
-        # Stats ribbon - lighter
-        html.Div(style={"display":"flex","gap":"24px","alignItems":"center","justifyContent":"center",
-                         "padding":"10px 48px 16px","position":"relative","zIndex":"1","flexWrap":"wrap"}, children=[
-            html.Span(f"{len(EXP_DATA)} Experiments", style={"color":"rgba(255,255,255,0.85)","fontSize":"13px","fontWeight":"500"}),
-            html.Span("|", style={"color":"rgba(255,255,255,0.3)"}),
-            html.Span("12 Analysis Tabs", style={"color":"rgba(255,255,255,0.85)","fontSize":"13px","fontWeight":"500"}),
-            html.Span("|", style={"color":"rgba(255,255,255,0.3)"}),
-            html.Span("KW + MW Statistics", style={"color":"rgba(255,255,255,0.85)","fontSize":"13px","fontWeight":"500"}),
-            html.Span("|", style={"color":"rgba(255,255,255,0.3)"}),
-            html.Span("PCA + Biclustering", style={"color":"rgba(255,255,255,0.85)","fontSize":"13px","fontWeight":"500"}),
-            html.Span("|", style={"color":"rgba(255,255,255,0.3)"}),
-            html.Span("Export to R", style={"color":"rgba(255,255,255,0.85)","fontSize":"13px","fontWeight":"500"}),
+        # Stats ribbon -- elegant with green accents
+        html.Div(style={"display":"flex","gap":"20px","alignItems":"center","justifyContent":"center",
+                         "padding":"12px 52px 14px","position":"relative","zIndex":"1","flexWrap":"wrap"}, children=[
+            html.Span(f"{len(EXP_DATA)} Experiments", style={"color":"#86efac","fontSize":"13px","fontWeight":"600"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.Span("12 Analysis Tabs", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.Span("KW + MW Statistics", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.Span("PCA + Biclustering", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.Span("Export to R", style={"color":"#9ca3af","fontSize":"13px","fontWeight":"500"}),
         ]),
-        # Upload area (collapsible, 3-slot) -- light glass styling
-        html.Details(style={"margin":"8px 48px 0","position":"relative","zIndex":"1",
-                             "background":"rgba(255,255,255,0.12)","borderRadius":"14px",
-                             "padding":"12px 20px","border":"1px solid rgba(255,255,255,0.2)"}, children=[
+        # Upload area (collapsible, 3-slot) -- dark glass panel
+        html.Details(style={"margin":"6px 52px 0","position":"relative","zIndex":"1",
+                             "background":"rgba(255,255,255,0.05)","borderRadius":"12px",
+                             "padding":"14px 22px","border":"1px solid rgba(255,255,255,0.08)"}, children=[
             html.Summary("Upload / Replace Data Files",
-                         style={"cursor":"pointer","color":"white","fontSize":"14px","fontWeight":"600",
+                         style={"cursor":"pointer","color":"#86efac","fontSize":"14px","fontWeight":"600",
                                 "letterSpacing":"0.5px","listStyleType":"none"}),
             # Mode selector
             html.Div(style={"display":"flex","gap":"16px","marginTop":"14px","alignItems":"center","flexWrap":"wrap"}, children=[
                 html.Div(style={"display":"flex","gap":"8px","alignItems":"center"}, children=[
-                    html.Span("MODE:", style={"color":"rgba(255,255,255,0.8)","fontSize":"11px","fontWeight":"700","letterSpacing":"1px"}),
+                    html.Span("MODE:", style={"color":"#6b7280","fontSize":"11px","fontWeight":"700","letterSpacing":"1px"}),
                     dcc.RadioItems(id="upload-mode",
                         options=[{"label":" Replace files in current experiment","value":"replace"},
                                  {"label":" Upload new experiment","value":"new"}],
                         value="replace", inline=True,
-                        style={"color":"rgba(255,255,255,0.9)","fontSize":"13px"},
+                        style={"color":"#d1d5db","fontSize":"13px"},
                         inputStyle={"marginRight":"4px","marginLeft":"12px"}),
                 ]),
                 # New experiment name (shown only for "new" mode)
                 html.Div(id="new-exp-name-wrap", style={"display":"none"}, children=[
-                    html.Span("NAME:", style={"color":"rgba(255,255,255,0.8)","fontSize":"11px","fontWeight":"700","letterSpacing":"1px","marginRight":"8px"}),
+                    html.Span("NAME:", style={"color":"#6b7280","fontSize":"11px","fontWeight":"700","letterSpacing":"1px","marginRight":"8px"}),
                     dcc.Input(id="new-exp-name", type="text", placeholder="My Experiment (species)",
-                              style={"borderRadius":"10px","border":"1px solid rgba(255,255,255,0.35)",
-                                     "padding":"7px 14px","fontSize":"13px","backgroundColor":"rgba(255,255,255,0.15)",
+                              style={"borderRadius":"10px","border":"1px solid rgba(255,255,255,0.15)",
+                                     "padding":"8px 14px","fontSize":"14px","backgroundColor":"rgba(255,255,255,0.08)",
                                      "color":"white","width":"280px"}),
                 ]),
             ]),
-            html.Div(style={"display":"flex","gap":"16px","marginTop":"14px","flexWrap":"wrap"}, children=[
+            html.Div(style={"display":"flex","gap":"18px","marginTop":"14px","flexWrap":"wrap"}, children=[
                 html.Div(style={"flex":"1","minWidth":"250px"}, children=[
-                    html.Label("1. Phenodata TSV", style={"color":"rgba(255,255,255,0.85)","fontSize":"11px","fontWeight":"600"}),
+                    html.Label("1. Phenodata TSV", style={"color":"#86efac","fontSize":"12px","fontWeight":"600","marginBottom":"4px","display":"block"}),
                     dcc.Upload(id="upload-pheno",
-                        children=html.Div(["Drop or ", html.A("select phenodata.tsv",style={"color":"#bbf7d0","fontWeight":"600"})]),
-                        style={"border":"2px dashed rgba(255,255,255,0.25)","borderRadius":"12px","padding":"16px",
-                               "textAlign":"center","color":"rgba(255,255,255,0.7)","fontSize":"13px",
-                               "cursor":"pointer","backgroundColor":"rgba(255,255,255,0.06)"},
+                        children=html.Div(["Drop or ", html.A("select phenodata.tsv",style={"color":"#4ade80","fontWeight":"700"})]),
+                        style={"border":"2px dashed rgba(74,222,128,0.25)","borderRadius":"12px","padding":"18px",
+                               "textAlign":"center","color":"#9ca3af","fontSize":"13px",
+                               "cursor":"pointer","backgroundColor":"rgba(255,255,255,0.03)"},
                         multiple=False),
                 ]),
                 html.Div(style={"flex":"1","minWidth":"250px"}, children=[
-                    html.Label("2. histone_ratios.xls (TSV)", style={"color":"rgba(255,255,255,0.85)","fontSize":"11px","fontWeight":"600"}),
+                    html.Label("2. histone_ratios.xls (TSV)", style={"color":"#86efac","fontSize":"12px","fontWeight":"600","marginBottom":"4px","display":"block"}),
                     dcc.Upload(id="upload-ratios",
-                        children=html.Div(["Drop or ", html.A("select histone_ratios",style={"color":"#bbf7d0","fontWeight":"600"})]),
-                        style={"border":"2px dashed rgba(255,255,255,0.25)","borderRadius":"12px","padding":"16px",
-                               "textAlign":"center","color":"rgba(255,255,255,0.7)","fontSize":"13px",
-                               "cursor":"pointer","backgroundColor":"rgba(255,255,255,0.06)"},
+                        children=html.Div(["Drop or ", html.A("select histone_ratios",style={"color":"#4ade80","fontWeight":"700"})]),
+                        style={"border":"2px dashed rgba(74,222,128,0.25)","borderRadius":"12px","padding":"18px",
+                               "textAlign":"center","color":"#9ca3af","fontSize":"13px",
+                               "cursor":"pointer","backgroundColor":"rgba(255,255,255,0.03)"},
                         multiple=False),
                 ]),
                 html.Div(style={"flex":"1","minWidth":"250px"}, children=[
-                    html.Label("3. Single PTMs TSV", style={"color":"rgba(255,255,255,0.85)","fontSize":"11px","fontWeight":"600"}),
+                    html.Label("3. Single PTMs TSV", style={"color":"#86efac","fontSize":"12px","fontWeight":"600","marginBottom":"4px","display":"block"}),
                     dcc.Upload(id="upload-singleptm",
-                        children=html.Div(["Drop or ", html.A("select single_PTMs",style={"color":"#bbf7d0","fontWeight":"600"})]),
-                        style={"border":"2px dashed rgba(255,255,255,0.25)","borderRadius":"12px","padding":"16px",
-                               "textAlign":"center","color":"rgba(255,255,255,0.7)","fontSize":"13px",
-                               "cursor":"pointer","backgroundColor":"rgba(255,255,255,0.06)"},
+                        children=html.Div(["Drop or ", html.A("select single_PTMs",style={"color":"#4ade80","fontWeight":"700"})]),
+                        style={"border":"2px dashed rgba(74,222,128,0.25)","borderRadius":"12px","padding":"18px",
+                               "textAlign":"center","color":"#9ca3af","fontSize":"13px",
+                               "cursor":"pointer","backgroundColor":"rgba(255,255,255,0.03)"},
                         multiple=False),
                 ]),
             ]),
-            html.Div(id="upload-status", style={"color":"#bbf7d0","fontSize":"12px","marginTop":"10px","fontWeight":"500"}),
+            html.Div(id="upload-status", style={"color":"#4ade80","fontSize":"13px","marginTop":"10px","fontWeight":"600"}),
         ]),
-        # Bottom padding for header
-        html.Div(style={"height":"18px"}),
+        # Bottom padding + accent line
+        html.Div(style={"height":"14px"}),
+        html.Div(style={"height":"2px","background":"linear-gradient(90deg, transparent 0%, #22c55e 30%, #4ade80 50%, #22c55e 70%, transparent 100%)","opacity":"0.6"}),
     ]),
-    # ---- Description bar with experiment stats (light, airy) ----
-    html.Div(style={"backgroundColor":"#f0fdf4","padding":"12px 48px",
-                     "borderBottom":"1px solid #dcfce7","display":"flex",
-                     "justifyContent":"space-between","alignItems":"center","flexWrap":"wrap","gap":"12px"}, children=[
-        html.Div(id="desc-bar", style={"fontSize":"13px","color":"#166534","fontWeight":"500"}),
+    # ---- Description bar with experiment stats (clean, modern grey) ----
+    html.Div(style={"backgroundColor":"#f8faf9","padding":"14px 52px",
+                     "borderBottom":"1px solid #e5e7eb","display":"flex",
+                     "justifyContent":"space-between","alignItems":"center","flexWrap":"wrap","gap":"14px"}, children=[
+        html.Div(id="desc-bar", style={"fontSize":"14px","color":"#374151","fontWeight":"500"}),
         html.Div(id="exp-stats-bar", style={"display":"flex","gap":"10px","alignItems":"center","flexWrap":"wrap"}),
     ]),
     # ---- Tabs ----
@@ -997,31 +991,31 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
     html.Div(id="tab-out", style={"padding":"30px 48px","maxWidth":"1800px","margin":"0 auto"}),
     # ---- Download component (hidden, triggered by export callbacks) ----
     dcc.Download(id="download-data"),
-    # ---- Footer (light, spacious, modern) ----
-    html.Div(style={"textAlign":"center","padding":"28px 48px","color":"#166534","fontSize":"12px",
-                     "background":"linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)",
-                     "borderTop":"1px solid #dcfce7","marginTop":"48px"}, children=[
-        html.Div(style={"display":"flex","justifyContent":"center","alignItems":"center","gap":"14px",
-                         "flexWrap":"wrap","marginBottom":"8px"}, children=[
-            html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"15px","color":"#16a34a",
-                       "letterSpacing":"-0.3px"}),
-            html.Span("v3.8", style={"fontWeight":"700","fontSize":"12px","color":"#15803d",
-                       "background":"#dcfce7","padding":"2px 10px","borderRadius":"10px",
-                       "border":"1px solid #bbf7d0"}),
-            html.Span("|", style={"color":"#d1fae5","fontSize":"16px"}),
-            html.Span("Histone PTM Quantification Dashboard", style={"fontWeight":"500","color":"#166534"}),
-            html.Span("|", style={"color":"#d1fae5","fontSize":"16px"}),
-            html.A("GitHub Repository", href="https://github.com/biopelayo/epiprofile-dashboard",
-                   style={"color":"#fff","textDecoration":"none","fontWeight":"600",
-                          "background":"linear-gradient(135deg, #16a34a, #22c55e)",
-                          "padding":"5px 16px","borderRadius":"10px",
-                          "fontSize":"12px","transition":"all 0.2s ease",
-                          "boxShadow":"0 2px 6px rgba(22,163,74,0.2)"}, target="_blank"),
+    # ---- Footer (dark green, matches header) ----
+    html.Div(style={"textAlign":"center","padding":"30px 52px","fontSize":"12px",
+                     "background":"linear-gradient(160deg, #0f1f13 0%, #14532d 60%, #166534 100%)",
+                     "borderTop":"2px solid #22c55e","marginTop":"48px","color":"#9ca3af"}, children=[
+        html.Div(style={"display":"flex","justifyContent":"center","alignItems":"center","gap":"16px",
+                         "flexWrap":"wrap","marginBottom":"10px"}, children=[
+            html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"17px","color":"#fff",
+                       "letterSpacing":"-0.5px"}),
+            html.Span("v3.8", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
+                       "background":"#22c55e","padding":"3px 12px","borderRadius":"10px",
+                       "boxShadow":"0 0 8px rgba(34,197,94,0.3)"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.Span("Histone PTM Quantification Dashboard", style={"fontWeight":"500","color":"#6b7280",
+                       "fontSize":"13px"}),
+            html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
+            html.A("GitHub", href="https://github.com/biopelayo/epiprofile-dashboard",
+                   style={"color":"#86efac","textDecoration":"none","fontWeight":"700",
+                          "fontSize":"13px","letterSpacing":"0.5px",
+                          "borderBottom":"1px solid rgba(134,239,172,0.3)",
+                          "paddingBottom":"1px"}, target="_blank"),
         ]),
         html.P("Publication-quality visualization | Kruskal-Wallis + Mann-Whitney + FDR | "
                "PCA + Biclustering | Co-occurrence + UpSet | Export to R",
-               style={"margin":"6px 0 0","color":"#86efac","fontSize":"11px","fontWeight":"500",
-                       "letterSpacing":"0.3px"}),
+               style={"margin":"8px 0 0","color":"#4b5563","fontSize":"11px","fontWeight":"400",
+                       "letterSpacing":"0.5px"}),
     ]),
     dcc.Store(id="cur-exp", data=DEFAULT_EXP),
     dcc.Store(id="cur-palette", data="EpiProfile (default)"),
@@ -1066,11 +1060,11 @@ def _exp_stats(exp):
     n_hptm = len(d.get("hptm", pd.DataFrame()))
     n_hpf = len(d.get("hpf", pd.DataFrame()))
     has_areas = "areas_norm" in d and d["areas_norm"] is not None
-    badge = lambda txt, bg: html.Span(txt, style={"background":bg,"color":"white","padding":"2px 10px",
-        "borderRadius":"10px","fontSize":"11px","fontWeight":"600"})
+    badge = lambda txt, bg: html.Span(txt, style={"background":bg,"color":"white","padding":"3px 12px",
+        "borderRadius":"8px","fontSize":"12px","fontWeight":"600","letterSpacing":"0.2px"})
     chips = [
-        badge(f"{n_samp} samples", "#166534"),
-        badge(f"{n_grp} groups", "#15803d"),
+        badge(f"{n_samp} samples", "#14532d"),
+        badge(f"{n_grp} groups", "#166534"),
         badge(f"{n_hptm} hPTMs", "#0891b2"),
     ]
     if n_hpf > 0: chips.append(badge(f"{n_hpf} hPF", "#7c3aed"))
