@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.8 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.9 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -228,7 +228,7 @@ def _get_exp_info(exp_name):
             return EXP_INFO[key]
     return None
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.8")
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.9")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -917,7 +917,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                  "flexWrap":"wrap"}, children=[
                     html.Span("Histone PTM Quantification Dashboard", style={"color":"#94a3b8",
                               "fontSize":"16px","fontWeight":"400","letterSpacing":"0.3px"}),
-                    html.Span("v3.8", style={"background":"#22c55e","padding":"3px 14px",
+                    html.Span("v3.9", style={"background":"#22c55e","padding":"3px 14px",
                               "borderRadius":"14px","fontSize":"12px","fontWeight":"700","color":"#0f1f13",
                               "boxShadow":"0 0 10px rgba(34,197,94,0.4)"}),
                 ]),
@@ -1064,7 +1064,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                          "flexWrap":"wrap","marginBottom":"10px"}, children=[
             html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"17px","color":"#fff",
                        "letterSpacing":"-0.5px"}),
-            html.Span("v3.8", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
+            html.Span("v3.9", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
                        "background":"#22c55e","padding":"3px 12px","borderRadius":"10px",
                        "boxShadow":"0 0 8px rgba(34,197,94,0.3)"}),
             html.Span(chr(8226), style={"color":"#374151","fontSize":"10px"}),
@@ -1867,7 +1867,7 @@ def _pca_content(source, exp, pal):
     src_label = {"ratios":"Ratios","areas_norm":"Areas (log2+QN)","areas_log2":"Areas (log2)"}.get(source,"Ratios")
 
     X = df.T.fillna(0)
-    n_comp = min(3, X.shape[1], X.shape[0])
+    n_comp = min(5, X.shape[1], X.shape[0])
     if n_comp < 2:
         return html.Div(style=CS, children=[html.P("Not enough features for PCA.")])
 
@@ -1878,162 +1878,305 @@ def _pca_content(source, exp, pal):
     pc_df = pd.DataFrame({"PC1":coords[:,0],"PC2":coords[:,1],"Sample":X.index})
     if n_comp>=3: pc_df["PC3"] = coords[:,2]
     pc_df = pc_df.merge(meta, on="Sample")
+    uniq_groups = sorted(pc_df["Group"].unique())
+    n_grp = len(uniq_groups)
 
+    # ---- 1. PCA SCATTER (publication quality) ----
     fig1 = px.scatter(pc_df, x="PC1", y="PC2", color="Group", hover_name="Sample",
-                      symbol="Tissue" if pc_df["Tissue"].nunique()>1 else None,
                       color_discrete_sequence=GC)
-    fig1.update_traces(marker=dict(size=11,line=dict(width=1.5,color="white")))
-    pfig(fig1, 500, n_groups=len(pc_df["Group"].unique()))
-    fig1.update_layout(xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
-                       title=dict(text=f"PCA - {src_label}",font=dict(size=18)))
+    fig1.update_traces(marker=dict(size=12, line=dict(width=1.8, color="white"),
+                                    opacity=0.9))
+    pfig(fig1, 520, n_groups=n_grp)
+    fig1.update_layout(
+        xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
+        title=dict(text=f"PCA Score Plot ({src_label})", font=dict(size=16)),
+        xaxis=dict(zeroline=True, zerolinecolor="#e5e7eb", zerolinewidth=1, showgrid=True, gridcolor="#f1f5f9"),
+        yaxis=dict(zeroline=True, zerolinecolor="#e5e7eb", zerolinewidth=1, showgrid=True, gridcolor="#f1f5f9"),
+        legend=dict(font=dict(size=12)))
 
-    for grp in sorted(pc_df["Group"].unique()):
-        gd = pc_df[pc_df["Group"]==grp]
+    # 95% confidence ellipses (proper covariance-based, not axis-aligned)
+    for i_grp, grp in enumerate(uniq_groups):
+        gd = pc_df[pc_df["Group"] == grp]
         if len(gd) >= 3:
             mx, my = gd["PC1"].mean(), gd["PC2"].mean()
-            sx, sy = gd["PC1"].std(), gd["PC2"].std()
-            theta = np.linspace(0,2*np.pi,50)
-            fig1.add_trace(go.Scatter(x=mx+1.96*sx*np.cos(theta),y=my+1.96*sy*np.sin(theta),
-                                       mode="lines",line=dict(width=1,dash="dash"),showlegend=False,opacity=0.4,hoverinfo="skip"))
+            cov = np.cov(gd["PC1"].values, gd["PC2"].values)
+            eigenvals, eigenvecs = np.linalg.eigh(cov)
+            # 95% chi2 with 2 dof = 5.991
+            chi2_val = 5.991
+            theta = np.linspace(0, 2 * np.pi, 80)
+            a = np.sqrt(eigenvals[1] * chi2_val)
+            b = np.sqrt(eigenvals[0] * chi2_val)
+            angle = np.arctan2(eigenvecs[1, 1], eigenvecs[0, 1])
+            ellipse_x = mx + a * np.cos(theta) * np.cos(angle) - b * np.sin(theta) * np.sin(angle)
+            ellipse_y = my + a * np.cos(theta) * np.sin(angle) + b * np.sin(theta) * np.cos(angle)
+            gc_color = GC[i_grp % len(GC)]
+            fig1.add_trace(go.Scatter(
+                x=ellipse_x, y=ellipse_y, mode="lines", showlegend=False,
+                line=dict(width=1.5, dash="dash", color=gc_color), opacity=0.45, hoverinfo="skip"))
 
-    all_ev = pca.explained_variance_ratio_
-    sfig = go.Figure()
-    sfig.add_trace(go.Bar(x=[f"PC{i+1}" for i in range(len(all_ev))],y=all_ev*100,marker_color=C["accent"],name="Individual"))
-    sfig.add_trace(go.Scatter(x=[f"PC{i+1}" for i in range(len(all_ev))],y=np.cumsum(all_ev)*100,
-                              mode="lines+markers",marker_color=C["red"],name="Cumulative",yaxis="y2"))
-    pfig(sfig, 350)
-    sfig.update_layout(yaxis_title="Variance Explained (%)",yaxis2=dict(title="Cumulative %",overlaying="y",side="right",range=[0,105]),
-                       title=dict(text="Scree Plot",font=dict(size=18)))
-
+    # ---- 2. BIPLOT (publication-quality with gradient arrows) ----
     loadings = pca.components_[:2].T
-    load_df = pd.DataFrame({"Feature":df.index,"PC1":loadings[:,0],"PC2":loadings[:,1]})
-    load_df["mag"] = np.sqrt(load_df["PC1"]**2+load_df["PC2"]**2)
-    top_load = load_df.nlargest(15,"mag")
+    load_df = pd.DataFrame({"Feature": df.index, "PC1": loadings[:, 0], "PC2": loadings[:, 1]})
+    load_df["mag"] = np.sqrt(load_df["PC1"]**2 + load_df["PC2"]**2)
+    top_load = load_df.nlargest(15, "mag")
+    scale = np.abs(coords[:, :2]).max() / (np.abs(loadings).max() + 1e-10) * 0.75
 
     bfig = go.Figure()
-    for grp in sorted(pc_df["Group"].unique()):
-        gd = pc_df[pc_df["Group"]==grp]
-        bfig.add_trace(go.Scatter(x=gd["PC1"],y=gd["PC2"],mode="markers",name=grp,marker=dict(size=8,opacity=0.4)))
-    scale = np.abs(coords[:,:2]).max()/(np.abs(loadings).max()+1e-10)*0.8
-    for _, row in top_load.iterrows():
-        bfig.add_annotation(ax=0,ay=0,x=row["PC1"]*scale,y=row["PC2"]*scale,xref="x",yref="y",axref="x",ayref="y",
-                            showarrow=True,arrowhead=2,arrowsize=1.5,arrowwidth=1.5,arrowcolor=C["red"])
-        bfig.add_annotation(x=row["PC1"]*scale*1.1,y=row["PC2"]*scale*1.1,text=row["Feature"],showarrow=False,font=dict(size=12,color=C["red"]))
-    pfig(bfig, 500, n_groups=len(pc_df["Group"].unique()))
-    bfig.update_layout(xaxis_title=f"PC1 ({ev[0]:.1f}%)",yaxis_title=f"PC2 ({ev[1]:.1f}%)",
-                       title=dict(text=f"PCA Biplot - {src_label}",font=dict(size=18)))
+    # Sample points (subtle, behind arrows)
+    for i_grp, grp in enumerate(uniq_groups):
+        gd = pc_df[pc_df["Group"] == grp]
+        bfig.add_trace(go.Scatter(x=gd["PC1"], y=gd["PC2"], mode="markers", name=grp,
+                                   marker=dict(size=9, opacity=0.35, color=GC[i_grp % len(GC)],
+                                               line=dict(width=1, color="white"))))
+    # Loading arrows (dark red, elegant)
+    for rank, (_, row) in enumerate(top_load.iterrows()):
+        ax_val = row["PC1"] * scale
+        ay_val = row["PC2"] * scale
+        intensity = 0.5 + 0.5 * (1 - rank / len(top_load))
+        arrow_color = f"rgba(185, 28, 28, {intensity})"
+        bfig.add_annotation(ax=0, ay=0, x=ax_val, y=ay_val, xref="x", yref="y", axref="x", ayref="y",
+                            showarrow=True, arrowhead=3, arrowsize=1.3, arrowwidth=2, arrowcolor=arrow_color)
+        # Feature label with background
+        bfig.add_annotation(x=ax_val * 1.12, y=ay_val * 1.12, text=row["Feature"],
+                            showarrow=False, font=dict(size=11, color="#991b1b", family=FONT),
+                            bgcolor="rgba(255,255,255,0.85)", borderpad=2)
+    pfig(bfig, 520, n_groups=n_grp)
+    bfig.update_layout(
+        xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
+        title=dict(text=f"PCA Biplot - Top 15 Loadings ({src_label})", font=dict(size=16)),
+        xaxis=dict(zeroline=True, zerolinecolor="#d1d5db", zerolinewidth=1.5),
+        yaxis=dict(zeroline=True, zerolinecolor="#d1d5db", zerolinewidth=1.5))
 
+    # ---- 3. SCREE PLOT (extended to all computed components) ----
+    all_ev = pca.explained_variance_ratio_
+    pc_labels = [f"PC{i+1}" for i in range(len(all_ev))]
+    sfig = go.Figure()
+    sfig.add_trace(go.Bar(x=pc_labels, y=all_ev * 100, marker_color=C["accent"],
+                           name="Individual", text=[f"{v:.1f}%" for v in all_ev * 100],
+                           textposition="outside", textfont=dict(size=11)))
+    sfig.add_trace(go.Scatter(x=pc_labels, y=np.cumsum(all_ev) * 100, mode="lines+markers",
+                              marker=dict(color=C["red"], size=8), line=dict(width=2),
+                              name="Cumulative", yaxis="y2"))
+    pfig(sfig, 380)
+    sfig.update_layout(yaxis_title="Variance Explained (%)",
+                       yaxis2=dict(title="Cumulative %", overlaying="y", side="right", range=[0, 105]),
+                       title=dict(text="Scree Plot", font=dict(size=16)),
+                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+
+    # ---- 4. 3D PCA ----
     fig3d = go.Figure()
     if n_comp >= 3:
-        fig3d = px.scatter_3d(pc_df, x="PC1",y="PC2",z="PC3",color="Group",hover_name="Sample",color_discrete_sequence=GC)
-        fig3d.update_traces(marker=dict(size=6))
-        pfig(fig3d, 500)
-        fig3d.update_layout(scene=dict(xaxis_title=f"PC1 ({ev[0]:.1f}%)",yaxis_title=f"PC2 ({ev[1]:.1f}%)",zaxis_title=f"PC3 ({ev[2]:.1f}%)"),
-                            title=dict(text=f"3D PCA - {src_label}",font=dict(size=18)))
+        fig3d = px.scatter_3d(pc_df, x="PC1", y="PC2", z="PC3", color="Group",
+                               hover_name="Sample", color_discrete_sequence=GC)
+        fig3d.update_traces(marker=dict(size=6, line=dict(width=0.5, color="white")))
+        pfig(fig3d, 520)
+        fig3d.update_layout(
+            scene=dict(xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
+                       zaxis_title=f"PC3 ({ev[2]:.1f}%)"),
+            title=dict(text=f"3D PCA ({src_label})", font=dict(size=16)))
 
+    # ---- 5. HIERARCHICAL CLUSTERING (Ward + colored by group) ----
     try:
         dd = df.T.fillna(0).values
-        dist_ = pdist(dd,metric="euclidean"); link_ = linkage(dist_,method="ward")
-        dr = scipy_dend(link_, labels=df.columns.tolist(), no_plot=True)
+        dist_ = pdist(dd, metric="euclidean"); link_ = linkage(dist_, method="ward")
+        dr = scipy_dend(link_, labels=df.columns.tolist(), no_plot=True, color_threshold=0)
         dfig = go.Figure()
-        for xc, yc in zip(dr["icoord"],dr["dcoord"]):
-            dfig.add_trace(go.Scatter(x=xc,y=yc,mode="lines",line=dict(color=C["accent"],width=1.5),showlegend=False))
-        tp_ = [5+10*i for i in range(len(dr["ivl"]))]
-        dfig.update_layout(template=PUB,height=350,xaxis=dict(tickmode="array",tickvals=tp_,ticktext=dr["ivl"],tickangle=45,
-                           tickfont=dict(size=adaptive_font(len(dr["ivl"])))),yaxis_title="Distance (Ward)",
-                           title=dict(text="Hierarchical Clustering",font=dict(size=18)),margin=dict(b=120))
-    except: dfig = go.Figure(); pfig(dfig, 350)
+        for xc, yc in zip(dr["icoord"], dr["dcoord"]):
+            dfig.add_trace(go.Scatter(x=xc, y=yc, mode="lines",
+                                       line=dict(color=C["accent"], width=1.8), showlegend=False))
+        tp_ = [5 + 10 * i for i in range(len(dr["ivl"]))]
+        # Color tick labels by group
+        tick_colors = []
+        for s in dr["ivl"]:
+            grp_match = meta[meta["Sample"] == s]["Group"].values
+            if len(grp_match) > 0:
+                gi = uniq_groups.index(grp_match[0]) if grp_match[0] in uniq_groups else 0
+                tick_colors.append(GC[gi % len(GC)])
+            else:
+                tick_colors.append(C["text"])
+        dfig.update_layout(template=PUB, height=380,
+            xaxis=dict(tickmode="array", tickvals=tp_, ticktext=dr["ivl"], tickangle=50,
+                       tickfont=dict(size=adaptive_font(len(dr["ivl"])))),
+            yaxis_title="Euclidean Distance (Ward)",
+            title=dict(text="Hierarchical Clustering (Ward Linkage)", font=dict(size=16)),
+            margin=dict(b=130))
+    except: dfig = go.Figure(); pfig(dfig, 380)
 
+    # ---- 6. PAM (k-Medoids) CLUSTERING ----
+    try:
+        from sklearn.metrics import silhouette_score, silhouette_samples
+        # Try k from 2 to 6, pick best silhouette
+        X_clust = df.T.fillna(0).values
+        best_k, best_sil = 2, -1
+        sil_scores = {}
+        max_k = min(7, X_clust.shape[0] - 1)
+        for k_try in range(2, max_k):
+            km_try = KMeans(n_clusters=k_try, random_state=42, n_init=10).fit(X_clust)
+            s = silhouette_score(X_clust, km_try.labels_)
+            sil_scores[k_try] = round(s, 3)
+            if s > best_sil:
+                best_sil = s; best_k = k_try
+        km_best = KMeans(n_clusters=best_k, random_state=42, n_init=10).fit(X_clust)
+        sil_vals = silhouette_samples(X_clust, km_best.labels_)
+
+        # Silhouette plot
+        sil_fig = go.Figure()
+        y_lower = 0
+        cluster_colors = [GC[c % len(GC)] for c in range(best_k)]
+        for c_idx in range(best_k):
+            c_sils = sorted(sil_vals[km_best.labels_ == c_idx])
+            y_upper = y_lower + len(c_sils)
+            sil_fig.add_trace(go.Bar(
+                x=c_sils, y=list(range(y_lower, y_upper)), orientation="h",
+                marker_color=cluster_colors[c_idx], name=f"Cluster {c_idx}", showlegend=True,
+                width=1.0))
+            y_lower = y_upper + 2
+        sil_fig.add_vline(x=best_sil, line_dash="dash", line_color=C["red"], annotation_text=f"Mean: {best_sil:.3f}")
+        pfig(sil_fig, max(350, X_clust.shape[0] * 8))
+        sil_fig.update_layout(
+            xaxis_title="Silhouette Coefficient", yaxis=dict(showticklabels=False),
+            title=dict(text=f"Silhouette Analysis (K={best_k}, mean={best_sil:.3f})", font=dict(size=16)),
+            barmode="stack")
+
+        # Silhouette scores for different k
+        sk_fig = go.Figure(go.Bar(
+            x=[str(k) for k in sil_scores.keys()],
+            y=list(sil_scores.values()),
+            marker_color=[C["accent"] if k == best_k else C["muted"] for k in sil_scores.keys()],
+            text=[f"{v:.3f}" for v in sil_scores.values()], textposition="outside"))
+        pfig(sk_fig, 300)
+        sk_fig.update_layout(xaxis_title="Number of Clusters (K)", yaxis_title="Silhouette Score",
+                             title=dict(text="Optimal K Selection", font=dict(size=16)))
+
+        # Cluster assignments on PCA space
+        pc_df["Cluster"] = [f"C{km_best.labels_[i]}" for i in range(len(km_best.labels_))]
+        pam_fig = px.scatter(pc_df, x="PC1", y="PC2", color="Cluster", symbol="Group",
+                              hover_name="Sample", color_discrete_sequence=GC)
+        pam_fig.update_traces(marker=dict(size=11, line=dict(width=1.5, color="white")))
+        pfig(pam_fig, 450, n_groups=best_k)
+        pam_fig.update_layout(
+            xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
+            title=dict(text=f"K-Means Clusters on PCA Space (K={best_k})", font=dict(size=16)))
+    except:
+        sil_fig = go.Figure(); pfig(sil_fig, 300)
+        sk_fig = go.Figure(); pfig(sk_fig, 300)
+        pam_fig = go.Figure(); pfig(pam_fig, 350)
+
+    # ---- 7. CORRELATION HEATMAP (Spearman) ----
     corr = df.corr(method="spearman")
-    co_ = cluster_order(corr,0); corr = corr.loc[co_,co_]
-    chm = phm(corr.values,corr.columns.tolist(),corr.index.tolist(),cs="RdBu_r",title="Spearman",zmin=-1,zmax=1,h=max(500,len(corr)*12))
+    co_ = cluster_order(corr, 0); corr = corr.loc[co_, co_]
+    chm = phm(corr.values, corr.columns.tolist(), corr.index.tolist(),
+              cs="RdBu_r", title="Spearman rho", zmin=-1, zmax=1, h=max(500, len(corr) * 12))
 
+    # ---- 8. FEATURE DENDROGRAM + K-MEANS ----
     feat_X = df.fillna(0).values; n_feats = feat_X.shape[0]
     try:
-        feat_dist = pdist(feat_X,metric="euclidean"); feat_link = linkage(feat_dist,method="ward")
+        feat_dist = pdist(feat_X, metric="euclidean"); feat_link = linkage(feat_dist, method="ward")
         feat_dr = scipy_dend(feat_link, labels=df.index.tolist(), no_plot=True)
         feat_dfig = go.Figure()
-        for xc, yc in zip(feat_dr["icoord"],feat_dr["dcoord"]):
-            feat_dfig.add_trace(go.Scatter(x=yc,y=xc,mode="lines",line=dict(color=C["green"],width=1.2),showlegend=False))
-        tp_f = [5+10*i for i in range(len(feat_dr["ivl"]))]
-        feat_dfig.update_layout(template=PUB,height=max(400,n_feats*14),
-            yaxis=dict(tickmode="array",tickvals=tp_f,ticktext=feat_dr["ivl"],tickfont=dict(size=adaptive_font(n_feats))),
-            xaxis_title="Distance (Ward)",title=dict(text="Feature Dendrogram",font=dict(size=18)),
+        for xc, yc in zip(feat_dr["icoord"], feat_dr["dcoord"]):
+            feat_dfig.add_trace(go.Scatter(x=yc, y=xc, mode="lines",
+                                            line=dict(color=C["green"], width=1.3), showlegend=False))
+        tp_f = [5 + 10 * i for i in range(len(feat_dr["ivl"]))]
+        feat_dfig.update_layout(template=PUB, height=max(400, n_feats * 14),
+            yaxis=dict(tickmode="array", tickvals=tp_f, ticktext=feat_dr["ivl"],
+                       tickfont=dict(size=adaptive_font(n_feats))),
+            xaxis_title="Distance (Ward)", title=dict(text="Feature Dendrogram", font=dict(size=16)),
             margin=dict(l=adaptive_margin_l(feat_dr["ivl"])))
     except: feat_dfig = go.Figure(); pfig(feat_dfig, 350)
 
-    k_vals = min(6,max(2,n_feats//5))
+    k_vals = min(6, max(2, n_feats // 5))
     try:
-        km = KMeans(n_clusters=k_vals,random_state=42,n_init=10).fit(feat_X)
+        km = KMeans(n_clusters=k_vals, random_state=42, n_init=10).fit(feat_X)
         groups_list = sorted(meta["Group"].unique())
         group_means = pd.DataFrame(index=df.index)
         for g in groups_list:
-            samps_g = meta[meta["Group"]==g]["Sample"].tolist()
+            samps_g = meta[meta["Group"] == g]["Sample"].tolist()
             cols_g = [c for c in df.columns if c in samps_g]
             if cols_g: group_means[g] = df[cols_g].mean(axis=1)
         group_means["Cluster"] = km.labels_
         cluster_means = group_means.groupby("Cluster")[groups_list].mean()
         km_hm = phm(cluster_means.values, groups_list,
                      [f"Cluster {i}" for i in cluster_means.index],
-                     cs="Greens",title=f"Feature Clusters (K={k_vals}) x Group Means",h=max(250,k_vals*50))
+                     cs="Greens", title=f"Feature Clusters (K={k_vals}) x Group Means",
+                     h=max(250, k_vals * 50))
     except: km_hm = go.Figure(); pfig(km_hm, 300)
 
+    # ---- 9. BICLUSTERING ----
     try:
         Z = df.fillna(0).values
         n_r, n_c = Z.shape
         n_bic = min(4, n_r, n_c)
         if n_bic >= 2 and n_r >= 4 and n_c >= 4:
             bic = SpectralBiclustering(n_clusters=n_bic, random_state=42, method="log")
-            bic.fit(Z + np.abs(Z.min()) + 1e-6)  # shift to positive for log method
-            ro = np.argsort(bic.row_labels_)
-            co = np.argsort(bic.column_labels_)
+            bic.fit(Z + np.abs(Z.min()) + 1e-6)
+            ro = np.argsort(bic.row_labels_); co = np.argsort(bic.column_labels_)
             bic_z = Z[ro][:, co]
-            bic_x = [df.columns[i] for i in co]   # samples (columns)
-            bic_y = [df.index[i] for i in ro]      # features (rows)
+            bic_x = [df.columns[i] for i in co]
+            bic_y = [df.index[i] for i in ro]
             bic_hm = phm(bic_z, bic_x, bic_y, cs="YlGnBu",
-                         title=f"Biclustering (n={n_bic})",
-                         h=max(500, len(bic_y)*14), meta=meta)
-            # Add cluster boundary lines
-            row_labels_sorted = bic.row_labels_[ro]
-            col_labels_sorted = bic.column_labels_[co]
+                         title=f"Biclustering (n={n_bic})", h=max(500, len(bic_y) * 14), meta=meta)
+            row_labels_sorted = bic.row_labels_[ro]; col_labels_sorted = bic.column_labels_[co]
             for i in range(1, len(row_labels_sorted)):
-                if row_labels_sorted[i] != row_labels_sorted[i-1]:
-                    bic_hm.add_hline(y=i-0.5, line_dash="dot", line_color="white", line_width=2)
+                if row_labels_sorted[i] != row_labels_sorted[i - 1]:
+                    bic_hm.add_hline(y=i - 0.5, line_dash="dot", line_color="white", line_width=2)
             for i in range(1, len(col_labels_sorted)):
-                if col_labels_sorted[i] != col_labels_sorted[i-1]:
-                    bic_hm.add_vline(x=i-0.5, line_dash="dot", line_color="white", line_width=2)
+                if col_labels_sorted[i] != col_labels_sorted[i - 1]:
+                    bic_hm.add_vline(x=i - 0.5, line_dash="dot", line_color="white", line_width=2)
         else:
             bic_hm = go.Figure()
             bic_hm.add_annotation(text=f"Need >= 4 features and 4 samples (have {n_r}x{n_c})",
-                                  xref="paper",yref="paper",x=0.5,y=0.5,showarrow=False,font=dict(size=14,color=C["muted"]))
+                                  xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+                                  font=dict(size=14, color=C["muted"]))
             pfig(bic_hm, 300)
     except Exception as bic_err:
         bic_hm = go.Figure()
         bic_hm.add_annotation(text=f"Biclustering error: {str(bic_err)[:80]}",
-                              xref="paper",yref="paper",x=0.5,y=0.5,showarrow=False,font=dict(size=13,color=C["red"]))
+                              xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+                              font=dict(size=13, color=C["red"]))
         pfig(bic_hm, 300)
 
+    # ---- ASSEMBLE LAYOUT ----
     children = [
-        html.P(f"Data source: {src_label} | {df.shape[0]} features x {df.shape[1]} samples",
-               style={"color":C["accent"],"fontWeight":"600","fontSize":"14px","marginBottom":"8px"}),
+        html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"12px"}, children=[
+            _sc("Features", str(df.shape[0]), C["accent"]),
+            _sc("Samples", str(df.shape[1]), C["h4"]),
+            _sc("Components", str(n_comp), C["h3"]),
+            _sc("Var PC1+PC2", f"{ev[0]+ev[1]:.1f}%", C["warn"]),
+            _sc("Data", src_label, "#6b7280"),
+        ]),
+        _st("Principal Component Analysis", f"Score plot with 95% confidence ellipses (chi-squared) | {src_label}", icon="\U0001F4D0"),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=fig1)]),
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=bfig)]),
+            html.Div(style={**CS,"flex":"1","minWidth":"520px"}, children=[dcc.Graph(figure=fig1)]),
+            html.Div(style={**CS,"flex":"1","minWidth":"520px"}, children=[dcc.Graph(figure=bfig)]),
         ]),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"350px"}, children=[dcc.Graph(figure=sfig)]),
-            html.Div(style={**CS,"flex":"2","minWidth":"500px"}, children=[dcc.Graph(figure=dfig)]),
+            html.Div(style={**CS,"flex":"2","minWidth":"520px"}, children=[dcc.Graph(figure=dfig)]),
         ]),
     ]
     if n_comp >= 3:
         children.append(html.Div(style=CS, children=[dcc.Graph(figure=fig3d)]))
-    children.append(html.Div(style=CS, children=[_st("Sample Correlation", icon="\U0001F4D0"), dcc.Graph(figure=chm)]))
-    children.append(html.H3("Feature Clustering",style={"color":C["accent"],"marginTop":"32px","marginBottom":"8px","fontSize":"20px"}))
+
+    # Clustering section
+    children.append(_st("Sample Clustering & Silhouette Analysis",
+                         f"Optimal K selected by silhouette score | Ward linkage dendrogram", icon="\U0001F4CA"))
     children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-        html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=feat_dfig)]),
-        html.Div(style={**CS,"flex":"1","minWidth":"350px"}, children=[dcc.Graph(figure=km_hm)]),
+        html.Div(style={**CS,"flex":"1","minWidth":"450px"}, children=[dcc.Graph(figure=pam_fig)]),
+        html.Div(style={**CS,"flex":"1","minWidth":"350px"}, children=[dcc.Graph(figure=sil_fig)]),
     ]))
-    children.append(html.Div(style=CS, children=[_st("Biclustering","Spectral biclustering", icon="\U0001F9E9"),dcc.Graph(figure=bic_hm)]))
+    children.append(html.Div(style={**CS,"maxWidth":"500px"}, children=[dcc.Graph(figure=sk_fig)]))
+
+    children.append(_st("Feature Correlation", icon="\U0001F517"))
+    children.append(html.Div(style=CS, children=[dcc.Graph(figure=chm)]))
+
+    children.append(_st("Feature Clustering",
+                         f"Ward dendrogram + K-Means (K={k_vals}) group means + Spectral biclustering", icon="\U0001F9E9"))
+    children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+        html.Div(style={**CS,"flex":"1","minWidth":"420px"}, children=[dcc.Graph(figure=feat_dfig)]),
+        html.Div(style={**CS,"flex":"1","minWidth":"380px"}, children=[dcc.Graph(figure=km_hm)]),
+    ]))
+    children.append(html.Div(style=CS, children=[dcc.Graph(figure=bic_hm)]))
     return html.Div(children)
 
 
@@ -2707,8 +2850,28 @@ def tab_upset(d):
 
 
 # ======================================================================
-# TAB: REGION MAP (Lollipop / modification landscape per region)
+# TAB: REGION MAP (Modification Landscape with Sequence Context)
 # ======================================================================
+
+# Arabidopsis thaliana histone sequences (canonical) for annotation
+_HISTONE_SEQS = {
+    "H3": ("ARTKQTARKSTGGKAPRKQLATKAARKSAPATGGVKKPHRYRPGTVALRE"
+            "IRRYQKSTELLIRKLPFQRLVREIAQDFKTDLRFQSSAVMALQEASEAY"
+            "LVGLFEDTNLCAIHAKRVTIMPKDIQLARRIRGERA"),
+    "H3.3": ("ARTKQTARKSTGGKAPRKQLATKAARKSAPSTGGVKKPHRYRPGTVALRE"
+             "IRRYQKSTELLIRKLPFQRLVREIAQDFKTDLRFQSSAVMALQEASEAY"
+             "LVGLFEDTNLCAIHAKRVTIMPKDIQLARRIRGERA"),
+    "H4": ("SGRGKGGKGLGKGGAKRHRKVLRDNIQGITKPAIRRLARRGGVKRISGL"
+            "IYEETRGVLKVFLENVIRDAVTYTEHAKRKTVTAMDVVYALKRQGRTLY"
+            "GFGG"),
+}
+
+def _parse_region_positions(region):
+    """Extract start/end amino acid positions from region name like H3_3_8."""
+    m = re.match(r'H\d+(?:\.\d+)?_(\d+)_(\d+)', region.replace("H33", "H3.3"))
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None, None
 
 def tab_region(d):
     hpf_meta = d.get("hpf_meta", pd.DataFrame())
@@ -2721,7 +2884,7 @@ def tab_region(d):
 
     groups = sorted(meta["Group"].unique()) if not meta.empty else []
 
-    # ---- 1. Lollipop: number and type of modifications per region ----
+    # ---- Build region statistics ----
     region_stats = []
     for region in sorted(hpf_meta["region"].unique()):
         rmeta = hpf_meta[hpf_meta["region"] == region]
@@ -2729,7 +2892,6 @@ def tab_region(d):
         n_combo = int(rmeta["is_combo"].sum())
         n_single = int(((~rmeta["is_combo"]) & (rmeta["modification"] != "unmod")).sum())
         n_unmod = int((rmeta["modification"] == "unmod").sum())
-        # Mean ratio across all samples for this region
         rnames = rmeta["name"].tolist()
         rdata = hpf.loc[[n for n in rnames if n in hpf.index]]
         mean_ratio = rdata.values.mean() if not rdata.empty else 0
@@ -2739,16 +2901,16 @@ def tab_region(d):
             if isinstance(row.get("individual_ptms"), list):
                 all_ptms.extend(row["individual_ptms"])
         unique_ptms = sorted(set(all_ptms))
-        # Get histone
         histone = rmeta["histone"].iloc[0] if len(rmeta) > 0 else ""
-        # Find hDP header info
         seq = ""
         for hdp in hdp_list:
             if hdp.get("region") == region:
                 seq = hdp.get("sequence", ""); break
+        start, end = _parse_region_positions(region)
 
         region_stats.append({
             "Region": region, "Histone": histone, "Sequence": seq,
+            "Start": start, "End": end,
             "Total_hPF": n_total, "Single": n_single, "Combo": n_combo,
             "Unmod": n_unmod, "Mean_Ratio": round(mean_ratio, 4),
             "Unique_PTMs": ", ".join(unique_ptms), "n_unique_PTMs": len(unique_ptms),
@@ -2756,17 +2918,191 @@ def tab_region(d):
 
     rdf = pd.DataFrame(region_stats).sort_values("Region")
 
-    # Lollipop plot: Total modifications per region (stem + dot)
+    children = []
+
+    # Summary cards
+    children.append(html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
+        _sc("Regions", str(len(rdf)), C["accent"]),
+        _sc("Total hPF", str(int(rdf["Total_hPF"].sum())), C["h3"]),
+        _sc("Unique PTMs", str(int(rdf["n_unique_PTMs"].sum())), C["warn"]),
+        _sc("Histones", str(rdf["Histone"].nunique()), "#6b7280"),
+    ]))
+
+    # ============================================================
+    # SECTION 1: Sequence Coverage Map (histone track diagram)
+    # ============================================================
+    hist_colors_map = {"H3": "#2563eb", "H3.3": "#d97706", "H4": "#059669", "Other": "#6b7280"}
+    for hist_name in sorted(rdf["Histone"].unique()):
+        if not hist_name or hist_name == "Other":
+            continue
+        hist_key = hist_name if hist_name in _HISTONE_SEQS else ("H3" if hist_name == "H3.3" else None)
+        if hist_key is None:
+            continue
+        full_seq = _HISTONE_SEQS.get(hist_key, "")
+        if not full_seq:
+            continue
+
+        hist_regions = rdf[rdf["Histone"] == hist_name].copy()
+        hist_regions = hist_regions.dropna(subset=["Start", "End"])
+        if hist_regions.empty:
+            continue
+
+        seq_len = len(full_seq)
+        n_tracks = len(hist_regions)
+
+        # Build sequence track figure
+        trk = go.Figure()
+        # Background: full sequence bar
+        trk.add_trace(go.Scatter(
+            x=[0.5, seq_len + 0.5], y=[n_tracks + 1.5, n_tracks + 1.5],
+            mode="lines", line=dict(color="#e5e7eb", width=10),
+            showlegend=False, hoverinfo="skip"))
+
+        # Amino acid letters along top
+        aa_x, aa_text = [], []
+        for i, aa in enumerate(full_seq):
+            if i % 5 == 0 or aa in "KRST":
+                aa_x.append(i + 1)
+                aa_text.append(f"{aa}{i+1}")
+        trk.add_trace(go.Scatter(
+            x=aa_x, y=[n_tracks + 2.2] * len(aa_x), mode="text",
+            text=aa_text, textfont=dict(size=8, family="Courier New", color="#374151"),
+            showlegend=False, hoverinfo="skip"))
+
+        # Region coverage blocks
+        base_color = hist_colors_map.get(hist_name, "#6b7280")
+        for i, (_, rrow) in enumerate(hist_regions.iterrows()):
+            s, e = int(rrow["Start"]), int(rrow["End"])
+            y_pos = n_tracks - i
+            # Region block
+            trk.add_shape(type="rect", x0=s - 0.4, x1=e + 0.4,
+                         y0=y_pos - 0.35, y1=y_pos + 0.35,
+                         fillcolor=base_color, opacity=0.25,
+                         line=dict(color=base_color, width=1.5))
+            # Region label
+            trk.add_annotation(x=(s + e) / 2, y=y_pos, text=rrow["Sequence"] if rrow["Sequence"] else rrow["Region"],
+                              showarrow=False, font=dict(size=10, family="Courier New", color=base_color))
+            # Region name on left
+            trk.add_annotation(x=-1, y=y_pos, text=rrow["Region"], showarrow=False,
+                              font=dict(size=10, color="#374151"), xanchor="right")
+
+            # Mark modification sites with dots
+            ptms_str = rrow["Unique_PTMs"]
+            if ptms_str:
+                for ptm in ptms_str.split(", "):
+                    pm = re.match(r'[KRST](\d+)', ptm)
+                    if pm:
+                        pos = int(pm.group(1))
+                        if s <= pos <= e:
+                            trk.add_trace(go.Scatter(
+                                x=[pos], y=[y_pos + 0.35], mode="markers",
+                                marker=dict(size=7, color="#dc2626", symbol="triangle-down",
+                                            line=dict(width=0.5, color="white")),
+                                text=[ptm], hoverinfo="text", showlegend=False))
+
+        trk.update_layout(
+            template=PUB, height=max(180, 50 + n_tracks * 35),
+            title=dict(text=f"{hist_name} - Peptide Coverage Map", font=dict(size=16)),
+            xaxis=dict(title="Amino Acid Position", range=[0, seq_len + 2],
+                      dtick=10, showgrid=True, gridcolor="#f1f5f9",
+                      tickfont=dict(size=10)),
+            yaxis=dict(showticklabels=False, range=[0, n_tracks + 3],
+                      showgrid=False, zeroline=False),
+            margin=dict(l=100, r=30, t=50, b=40),
+            font=dict(family=FONT))
+
+        children.append(html.Div(style=CS, children=[dcc.Graph(figure=trk)]))
+
+    children.append(_st("Peptide Coverage Map",
+        "Histone sequence tracks showing peptide positions and modification sites (red triangles)",
+        icon="\U0001F9EC"))
+
+    # ============================================================
+    # SECTION 2: PTM Landscape - modification density along sequence
+    # ============================================================
+    # Build a PTM position map: for each modified residue, count how many distinct
+    # modifications target it, and what their mean abundance is
+    ptm_positions = {}
+    for _, row in hpf_meta.iterrows():
+        if isinstance(row.get("individual_ptms"), list):
+            region = row["region"]
+            histone = row["histone"]
+            for ptm in row["individual_ptms"]:
+                pm = re.match(r'([KRST])(\d+)(\w+)', ptm)
+                if pm:
+                    aa, pos, mod_type = pm.group(1), int(pm.group(2)), pm.group(3)
+                    key = (histone, pos, aa)
+                    if key not in ptm_positions:
+                        ptm_positions[key] = {"histone": histone, "pos": pos, "aa": aa,
+                                              "mod_types": set(), "regions": set(), "count": 0}
+                    ptm_positions[key]["mod_types"].add(mod_type)
+                    ptm_positions[key]["regions"].add(region)
+                    ptm_positions[key]["count"] += 1
+
+    if ptm_positions:
+        ptm_pos_df = pd.DataFrame([
+            {"Histone": v["histone"], "Position": v["pos"], "Residue": v["aa"],
+             "Site": f"{v['aa']}{v['pos']}", "Modifications": ", ".join(sorted(v["mod_types"])),
+             "N_mod_types": len(v["mod_types"]), "N_peptidoforms": v["count"],
+             "Regions": ", ".join(sorted(v["regions"]))}
+            for v in ptm_positions.values()
+        ]).sort_values(["Histone", "Position"])
+
+        # Modification type color scheme
+        mod_colors = {"me1": "#3b82f6", "me2": "#2563eb", "me3": "#1e40af",
+                      "ac": "#f59e0b", "ub": "#ef4444", "ph": "#8b5cf6",
+                      "but": "#10b981", "crot": "#06b6d4", "prop": "#6b7280"}
+
+        landscape = go.Figure()
+        for hist_name in sorted(ptm_pos_df["Histone"].unique()):
+            hd = ptm_pos_df[ptm_pos_df["Histone"] == hist_name]
+            landscape.add_trace(go.Scatter(
+                x=hd["Position"], y=hd["N_mod_types"],
+                mode="markers+text", name=hist_name,
+                marker=dict(size=hd["N_peptidoforms"].clip(upper=25) + 8,
+                            color=hist_colors_map.get(hist_name, "#6b7280"),
+                            opacity=0.75, line=dict(width=1.5, color="white")),
+                text=hd["Site"], textposition="top center",
+                textfont=dict(size=9, color="#374151"),
+                hovertext=[f"{r['Site']}: {r['Modifications']} ({r['N_peptidoforms']} hPF)"
+                           for _, r in hd.iterrows()],
+                hoverinfo="text"))
+
+        pfig(landscape, 380)
+        landscape.update_layout(
+            xaxis_title="Amino Acid Position", yaxis_title="# Modification Types",
+            title=dict(text="PTM Landscape: Modification Diversity per Residue", font=dict(size=16)),
+            xaxis=dict(dtick=5, showgrid=True, gridcolor="#f1f5f9"),
+            yaxis=dict(dtick=1),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+
+        children.append(html.Div(style=CS, children=[
+            _st("PTM Landscape",
+                "Bubble size = number of peptidoforms carrying that site | "
+                "Y-axis = number of distinct modification types (me1, me2, ac, ...)",
+                icon="\U0001F3AF"),
+            dcc.Graph(figure=landscape),
+        ]))
+
+        # Modification site summary table
+        children.append(html.Div(style=CS, children=[
+            _st("Modification Sites", "All detected modification sites with their types and frequencies"),
+            make_table(ptm_pos_df, "ptm-landscape-table"),
+        ]))
+
+    # ============================================================
+    # SECTION 3: Region Lollipop Charts (improved)
+    # ============================================================
+    # Cleveland dot plot: Total hPF and unique PTMs side by side
+    hist_colors = {"H3": C["h3"], "H3.3": C["warn"], "H4": C["h4"], "Other": C["muted"]}
+
     lf = go.Figure()
     for _, row in rdf.iterrows():
         region = row["Region"]
-        # Stem (line from 0 to value)
         lf.add_trace(go.Scatter(
             x=[0, row["Total_hPF"]], y=[region, region],
             mode="lines", line=dict(color=C["accent"], width=2),
             showlegend=False, hoverinfo="skip"))
-    # Dots at the end (colored by histone)
-    hist_colors = {"H3": C["h3"], "H3.3": C["warn"], "H4": C["h4"], "Other": C["muted"]}
     for hist in rdf["Histone"].unique():
         hd = rdf[rdf["Histone"] == hist]
         lf.add_trace(go.Scatter(
@@ -2775,26 +3111,16 @@ def tab_region(d):
             marker=dict(size=14, color=hist_colors.get(hist, C["accent"]),
                         line=dict(width=2, color="white")),
             text=hd["Total_hPF"].astype(str), textposition="middle right",
-            textfont=dict(size=13, color=C["text"])))
-    pfig(lf, max(350, len(rdf)*32))
+            textfont=dict(size=13, color=C["text"]),
+            hovertext=[f"{r['Region']}: {r['Sequence']} ({r['Start']}-{r['End']})" for _, r in hd.iterrows()],
+            hoverinfo="text+x"))
+    pfig(lf, max(350, len(rdf) * 32))
     lf.update_layout(
         xaxis_title="Number of Peptidoforms (hPF)",
         yaxis=dict(autorange="reversed", tickfont=dict(size=13)),
-        margin=dict(l=160, r=40), title=dict(text="Peptidoforms per Region (Lollipop)", font=dict(size=18)))
+        margin=dict(l=160, r=40), title=dict(text="Peptidoforms per Region", font=dict(size=18)))
 
-    # ---- 2. Stacked bar: Single vs Combo vs Unmod per region ----
-    sbf = go.Figure()
-    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Single"], name="Single-mod",
-                          marker_color=C["green"]))
-    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Combo"], name="Combinatorial",
-                          marker_color=C["warn"]))
-    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Unmod"], name="Unmodified",
-                          marker_color=C["muted"]))
-    pfig(sbf, 400)
-    sbf.update_layout(barmode="stack", xaxis=dict(tickangle=45, tickfont=dict(size=12)),
-                       yaxis_title="# hPF", title=dict(text="Modification Type per Region", font=dict(size=18)))
-
-    # ---- 3. Lollipop: unique individual PTM marks per region ----
+    # Unique PTMs lollipop
     uf = go.Figure()
     for _, row in rdf.iterrows():
         region = row["Region"]
@@ -2807,13 +3133,37 @@ def tab_region(d):
         marker=dict(size=12, color=C["h3"], symbol="diamond",
                     line=dict(width=1.5, color="white")),
         text=rdf["Unique_PTMs"], hoverinfo="text+x", name="Unique marks"))
-    pfig(uf, max(350, len(rdf)*32))
+    pfig(uf, max(350, len(rdf) * 32))
     uf.update_layout(
         xaxis_title="# Unique PTM Marks",
         yaxis=dict(autorange="reversed", tickfont=dict(size=13)),
-        margin=dict(l=160, r=40), title=dict(text="Unique PTM Marks per Region (Lollipop)", font=dict(size=18)))
+        margin=dict(l=160, r=40), title=dict(text="Unique PTM Marks per Region", font=dict(size=18)))
 
-    # ---- 4. Heatmap: mean ratio per region x group ----
+    children.append(_st("Region Complexity",
+        "Lollipop plots: peptidoform count and unique modification marks per derivatized peptide region",
+        icon="\U0001F4CD"))
+    children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+        html.Div(style={**CS, "flex": "1", "minWidth": "500px"}, children=[dcc.Graph(figure=lf)]),
+        html.Div(style={**CS, "flex": "1", "minWidth": "400px"}, children=[dcc.Graph(figure=uf)]),
+    ]))
+
+    # ============================================================
+    # SECTION 4: Composition breakdown per region (stacked + heatmap)
+    # ============================================================
+    sbf = go.Figure()
+    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Single"], name="Single-mod",
+                          marker_color=C["green"]))
+    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Combo"], name="Combinatorial",
+                          marker_color=C["warn"]))
+    sbf.add_trace(go.Bar(x=rdf["Region"], y=rdf["Unmod"], name="Unmodified",
+                          marker_color=C["muted"]))
+    pfig(sbf, 400)
+    sbf.update_layout(barmode="stack", xaxis=dict(tickangle=45, tickfont=dict(size=12)),
+                       yaxis_title="# hPF",
+                       title=dict(text="Modification Type per Region", font=dict(size=18)),
+                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+
+    # Region x Group heatmap
     if groups:
         rg_data = []
         for region in rdf["Region"]:
@@ -2823,20 +3173,27 @@ def tab_region(d):
             for g in groups:
                 samps = meta[meta["Group"] == g]["Sample"].tolist()
                 cols = [c for c in rdata.columns if c in samps]
-                if cols:
-                    gm = rdata[cols].mean().mean()
-                else:
-                    gm = np.nan
+                gm = rdata[cols].mean().mean() if cols else np.nan
                 rg_data.append({"Region": region, "Group": g, "Mean_Ratio": gm})
         rgdf = pd.DataFrame(rg_data)
         rgp = rgdf.pivot(index="Region", columns="Group", values="Mean_Ratio").fillna(0)
         rghm = phm(rgp.values, rgp.columns.tolist(), rgp.index.tolist(),
-                    cs="YlOrRd", title="Mean Ratio", h=max(300, len(rgp)*28))
+                    cs="YlOrRd", title="Mean Ratio", h=max(300, len(rgp) * 28))
         rghm.update_layout(title=dict(text="Mean hPF Ratio: Region x Group", font=dict(size=18)))
     else:
         rghm = go.Figure(); pfig(rghm, 300)
 
-    # ---- 5. Faceted box: top regions by group ----
+    children.append(_st("Composition & Group Patterns",
+        "Stacked bar: modification types per region | Heatmap: mean ratios across groups",
+        icon="\U0001F4CA"))
+    children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+        html.Div(style={**CS, "flex": "1", "minWidth": "500px"}, children=[dcc.Graph(figure=sbf)]),
+        html.Div(style={**CS, "flex": "1", "minWidth": "500px"}, children=[dcc.Graph(figure=rghm)]),
+    ]))
+
+    # ============================================================
+    # SECTION 5: Faceted box plots for top regions
+    # ============================================================
     if groups:
         top_regions = rdf.nlargest(6, "Total_hPF")["Region"].tolist()
         bml = []
@@ -2853,30 +3210,97 @@ def tab_region(d):
         pfig(rbf, 550)
         rbf.update_layout(showlegend=False)
         rbf.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-    else:
-        rbf = go.Figure(); pfig(rbf, 300)
 
-    return html.Div([
-        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
-            _sc("Regions", str(len(rdf)), C["accent"]),
-            _sc("Total hPF", str(int(rdf["Total_hPF"].sum())), C["h3"]),
-            _sc("Unique PTM Marks", str(int(rdf["n_unique_PTMs"].sum())), C["warn"]),
-        ]),
-        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=lf)]),
-            html.Div(style={**CS,"flex":"1","minWidth":"400px"}, children=[dcc.Graph(figure=uf)]),
-        ]),
-        html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=sbf)]),
-            html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=rghm)]),
-        ]),
-        html.Div(style=CS, children=[
-            _st("Top Regions by Group","Faceted box plots for the 6 most diverse regions", icon="\U0001F5FA"),
-            dcc.Graph(figure=rbf)]),
-        html.Div(style=CS, children=[
-            _st("Region Summary Table","Peptide regions with modification counts"),
-            make_table(rdf, "region-table")]),
-    ])
+        children.append(html.Div(style=CS, children=[
+            _st("Top Regions by Group", "Faceted box plots for the 6 most diverse regions", icon="\U0001F5FA"),
+            dcc.Graph(figure=rbf),
+        ]))
+
+    # ============================================================
+    # SECTION 6: Sequence context cards
+    # ============================================================
+    seq_cards = []
+    for _, rrow in rdf.iterrows():
+        if not rrow["Sequence"] or rrow["Sequence"] == "unmod_header":
+            continue
+        hist = rrow["Histone"]
+        start, end = rrow.get("Start"), rrow.get("End")
+        pos_str = f"aa {int(start)}-{int(end)}" if pd.notna(start) and pd.notna(end) else ""
+
+        # Annotated sequence: highlight modifiable residues
+        seq_html = []
+        seq_str = rrow["Sequence"]
+        ptms_in_region = rrow["Unique_PTMs"].split(", ") if rrow["Unique_PTMs"] else []
+        # Find which positions in the sequence are modified
+        mod_positions = set()
+        for ptm in ptms_in_region:
+            pm = re.match(r'[KRST](\d+)', ptm)
+            if pm and pd.notna(start):
+                abs_pos = int(pm.group(1))
+                rel_pos = abs_pos - int(start)
+                if 0 <= rel_pos < len(seq_str):
+                    mod_positions.add(rel_pos)
+
+        for i, aa in enumerate(seq_str):
+            if i in mod_positions:
+                abs_pos = int(start) + i if pd.notna(start) else i
+                seq_html.append(html.Span(aa, style={
+                    "color": "#dc2626", "fontWeight": "800", "textDecoration": "underline",
+                    "cursor": "pointer"}, title=f"{aa}{abs_pos}"))
+            elif aa in "KRST":
+                seq_html.append(html.Span(aa, style={"color": "#2563eb", "fontWeight": "700"}))
+            else:
+                seq_html.append(html.Span(aa, style={"color": "#374151"}))
+
+        badge_style = {"display": "inline-block", "padding": "2px 8px", "borderRadius": "10px",
+                       "fontSize": "11px", "fontWeight": "600", "marginRight": "4px"}
+
+        card = html.Div(style={
+            "border": "1px solid #e5e7eb", "borderRadius": "10px", "padding": "14px 18px",
+            "backgroundColor": "#fafafa", "minWidth": "320px", "flex": "1",
+        }, children=[
+            html.Div(style={"display": "flex", "alignItems": "center", "gap": "8px", "marginBottom": "8px"}, children=[
+                html.Span(rrow["Region"], style={"fontWeight": "800", "fontSize": "15px", "color": "#0f1f13"}),
+                html.Span(hist, style={**badge_style,
+                    "backgroundColor": hist_colors_map.get(hist, "#6b7280") + "22",
+                    "color": hist_colors_map.get(hist, "#6b7280")}),
+                html.Span(pos_str, style={**badge_style, "backgroundColor": "#f1f5f9", "color": "#64748b"}) if pos_str else None,
+            ]),
+            html.Div(style={"fontFamily": "Courier New, monospace", "fontSize": "16px",
+                            "letterSpacing": "2px", "marginBottom": "6px", "lineHeight": "1.6"},
+                     children=seq_html),
+            html.Div(style={"display": "flex", "gap": "12px", "fontSize": "12px", "color": "#6b7280"}, children=[
+                html.Span(f"{rrow['Total_hPF']} hPF"),
+                html.Span(f"{rrow['n_unique_PTMs']} PTM marks"),
+                html.Span(f"{rrow['Single']} single, {rrow['Combo']} combo"),
+            ]),
+            html.Div(style={"marginTop": "4px", "fontSize": "11px", "color": "#9ca3af"},
+                     children=rrow["Unique_PTMs"]) if rrow["Unique_PTMs"] else None,
+        ])
+        seq_cards.append(card)
+
+    if seq_cards:
+        children.append(html.Div(style=CS, children=[
+            _st("Sequence Context",
+                "Peptide sequences with modified residues highlighted | "
+                "Red underlined = modified | Blue = modifiable (K/R/S/T)",
+                icon="\U0001F9EC"),
+            html.Div(style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}, children=seq_cards),
+        ]))
+
+    # ============================================================
+    # SECTION 7: Region summary table
+    # ============================================================
+    table_cols = ["Region", "Histone", "Sequence", "Start", "End",
+                  "Total_hPF", "Single", "Combo", "Unmod", "Mean_Ratio",
+                  "n_unique_PTMs", "Unique_PTMs"]
+    table_df = rdf[[c for c in table_cols if c in rdf.columns]].copy()
+    children.append(html.Div(style=CS, children=[
+        _st("Region Summary Table", "Peptide regions with sequence context, modification counts and PTM lists"),
+        make_table(table_df, "region-table"),
+    ]))
+
+    return html.Div(children)
 
 
 # ======================================================================
@@ -3886,7 +4310,7 @@ def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, ad
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.8")
+    print("  EpiProfile-Plants Dashboard v3.9")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")

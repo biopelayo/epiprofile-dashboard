@@ -6,7 +6,7 @@ Interactive, publication-quality visualization dashboard for **EpiProfile-Plants
 ![Dash](https://img.shields.io/badge/Dash-4.0+-14532d?logo=plotly&logoColor=white)
 ![Plotly](https://img.shields.io/badge/Plotly-6.0+-3F4F75?logo=plotly&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-22c55e)
-![Version](https://img.shields.io/badge/Version-3.8-0f1f13)
+![Version](https://img.shields.io/badge/Version-3.9-0f1f13)
 
 ---
 
@@ -158,6 +158,7 @@ epiprofile-dashboard/
 
 | Version | Highlights |
 |---------|-----------|
+| v3.9 | PCA ellipses, silhouette analysis, Region Map with sequence context |
 | v3.8 | Biclustering fix, co-occurrence analysis, web upload, dark theme header |
 | v3.7 | Statistics bug fixes, Export to R tab |
 | v3.6 | Areas as primary data source, log2+QN normalization |
@@ -174,7 +175,7 @@ epiprofile-dashboard/
 If you use this dashboard in your research, please cite:
 
 ```
-EpiProfile-Plants Dashboard v3.8
+EpiProfile-Plants Dashboard v3.9
 https://github.com/biopelayo/epiprofile-dashboard
 ```
 

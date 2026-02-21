@@ -4,6 +4,30 @@ All notable changes to EpiProfile-Plants Dashboard.
 
 ---
 
+## v3.9 (2026-02-21)
+
+### Added
+- **PCA Score Plot**: Proper covariance-based 95% confidence ellipses (chi-squared, 2 dof)
+- **PCA Biplot**: Publication-quality with gradient-opacity arrows, white-background labels
+- **Silhouette Analysis**: Automatic optimal K selection (K=2..6), silhouette plot, scores bar chart
+- **K-Means on PCA**: Cluster assignments projected onto PCA score space
+- **Region Map - Sequence Coverage Map**: Histone sequence tracks showing peptide positions
+- **Region Map - PTM Landscape**: Bubble chart of modification diversity per residue
+- **Region Map - Sequence Context Cards**: Annotated peptide sequences with modified residues highlighted
+- Scree plot extended to all computed components with cumulative line
+- Ward dendrogram with group-colored tick labels
+
+### Changed
+- PCA marker styling: larger markers (12px) with white borders, 0.9 opacity
+- Biplot: sample points subtle (0.35 opacity) behind arrows, dark red gradient arrows
+- Region Map completely rewritten with 7 sections and histone sequence annotation
+- Hierarchical clustering: colored tick labels by experimental group
+
+### Fixed
+- PCA ellipses now use eigendecomposition of covariance matrix (not axis-aligned)
+
+---
+
 ## v3.8.2 (2026-02-21)
 
 ### Changed
