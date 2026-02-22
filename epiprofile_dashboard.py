@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.11 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.12 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -245,6 +245,10 @@ ICONS = {
     "instrument": f'<svg {_S}><rect x="4" y="8" width="16" height="10" rx="2"/><line x1="8" y1="4" x2="8" y2="8"/><line x1="16" y1="4" x2="16" y2="8"/><line x1="8" y1="4" x2="16" y2="4"/><polyline points="7,13 10,11 13,14 17,11" stroke-width="1.5"/></svg>',
     # -- Export/package box --
     "export": f'<svg {_S}><path d="M12 3v12"/><polyline points="8,11 12,15 16,11"/><path d="M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4"/></svg>',
+    # -- Paper/publication --
+    "paper": f'<svg {_S}><path d="M4 4a2 2 0 012-2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><polyline points="14,2 14,8 20,8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>',
+    # -- Warning/caution triangle --
+    "warning": f'<svg {_S} stroke="#d97706"><path d="M12 2L2 20h20L12 2z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17" r="0.5" fill="#d97706"/></svg>',
 }
 
 # ======================================================================
@@ -294,42 +298,45 @@ DEFAULTS = {
 # ---------- Experiment metadata (PXD info, paper summaries) ----------
 EXP_INFO = {
     "PXD046788": {
-        "title": "Histone PTM landscape under environmental stress in Arabidopsis thaliana",
+        "title": "Epigenetic changes in A. thaliana calli: impact of HDAC inhibitors",
         "pxd": "PXD046788",
         "organism": "Arabidopsis thaliana (Col-0)",
-        "tissue": "Rosette leaves (3-week-old seedlings)",
+        "tissue": "7-day seedlings, 20-day shoot/root calli, 1-year calli",
         "instrument": "Q Exactive HF-X (Thermo Fisher)",
-        "method": "Bottom-up MS, propionylation, DDA",
-        "conditions": "Control, Heat, Cold, Salt, Drought",
-        "summary": "Global histone PTM profiling across five abiotic stress conditions. "
-                   "Identifies stress-specific changes in H3K27me3, H3K4me3, and H3K9ac marks. "
-                   "Reveals coordinate regulation of methylation and acetylation under heat stress.",
+        "method": "Bottom-up MS, FASP + propionylation, DDA (Skyline 23.1)",
+        "conditions": "7ds, cS, cR, NaB-cS, NaB-cR, TSA-cS, TSA-cR, 1y-cS, 1y-cR",
+        "summary": "Investigates histone PTM changes during callus formation from shoot and root parts of Arabidopsis seedlings. "
+                   "H3.3 variant enrichment is the major feature of dedifferentiated calli. "
+                   "TSA and NaB have distinct effects: TSA increases H4 acetylation while NaB drives root-like epigenetic state. "
+                   "Long-term cultivation homogenizes methylation marks but reveals divergent acetylation patterns.",
         "icon": "plant",
     },
     "PXD014739": {
-        "title": "Comprehensive histone modification atlas of Arabidopsis thaliana",
+        "title": "HDA6 mutants and HDA inhibitors -- histone acetylation modes of action",
         "pxd": "PXD014739",
-        "organism": "Arabidopsis thaliana (multiple ecotypes)",
-        "tissue": "Whole seedlings, flowers, roots, leaves",
-        "instrument": "Q Exactive Plus (Thermo Fisher)",
-        "method": "Bottom-up MS, propionylation, DDA",
-        "conditions": "WT, clf, swn, fie, msi1, emf2, vrn2",
-        "summary": "Large-scale atlas of histone H3 and H4 modifications across 7 Polycomb mutant lines. "
-                   "Demonstrates PRC2 subunit-specific effects on H3K27me3 and crosstalk with H3K36me marks. "
-                   "114 samples provide a comprehensive reference for Arabidopsis histone PTMs.",
+        "organism": "Arabidopsis thaliana (Col-0)",
+        "tissue": "7-day seedlings + 7-week rosette leaves",
+        "instrument": "Orbitrap Elite (Thermo Fisher)",
+        "method": "Bottom-up MS, FASP + propionylation, DDA",
+        "conditions": "WT, hda6-6, hda6-7, NaB 0.5mM, NaB 1.5mM, TSA 0.5uM, TSA 1.5uM",
+        "summary": "Compares genetic (hda6) vs chemical (TSA, NaB) HDA downregulation in Arabidopsis. "
+                   "HDA6 targets H3K14ac, H3K18ac, H4K8ac, H4K16ac but cells compensate via redundant HDAs. "
+                   "Chemical inhibitors cause strong phenotypic effects beyond histone acetylation changes. "
+                   "All inhibitor-induced changes reverse after 7 weeks in soil.",
         "icon": "dna",
     },
     "PXD046034": {
-        "title": "Histone PTMs in FAS1/NAP1 chromatin assembly factor mutants",
+        "title": "Histone chaperone deficiency triggers adaptive epigenetic changes",
         "pxd": "PXD046034",
         "organism": "Arabidopsis thaliana (Col-0)",
         "tissue": "Rosette leaves",
         "instrument": "Q Exactive HF (Thermo Fisher)",
-        "method": "Bottom-up MS, propionylation, DDA",
+        "method": "Bottom-up MS, FASP + propionylation, DDA",
         "conditions": "WT_3905, fas1_3905, fas2_3905, nap1_3905, WT_4105, fas1_4105, fas2_4105, nap1_4105",
-        "summary": "Characterization of histone PTM changes in chromatin assembly factor mutants (FAS1, FAS2, NAP1). "
-                   "Two experimental designs (3905/4105) reveal replication-dependent vs -independent histone deposition effects. "
-                   "FAS mutants show altered H3K56ac and H3.1/H3.3 variant ratios.",
+        "summary": "Investigates histone variants and PTMs in chromatin assembly factor mutants (fas1, fas2, nap1). "
+                   "CAF-1 deficiency causes pleiotropic phenotype and alters H2A/H3 variant proportions. "
+                   "Adaptive epigenetic compensation maintains chromatin integrity despite chaperone loss. "
+                   "Two experimental designs (3905/4105) capture biological variation.",
         "icon": "microscope",
     },
     "Ontogeny": {
@@ -354,7 +361,239 @@ def _get_exp_info(exp_name):
             return EXP_INFO[key]
     return None
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.11")
+# ---------- Detailed paper information for each dataset ----------
+PAPER_INFO = {
+    "PXD014739": {
+        "citation": "Lochmanova G, Ihnatova I, Kucharikova H, Brabencova S, Zachova D, Fajkus J, Zdrahal Z, Fojtova M. "
+                    "Different Modes of Action of Genetic and Chemical Downregulation of Histone Deacetylases "
+                    "with Respect to Plant Development and Histone Modifications. "
+                    "Int J Mol Sci. 2019; 20(20):5093.",
+        "doi": "10.3390/ijms20205093",
+        "year": 2019,
+        "journal": "International Journal of Molecular Sciences",
+        "institution": "Mendel Centre for Plant Genomics and Proteomics, CEITEC, Masaryk University, Brno, Czech Republic",
+        "background": [
+            "Plants rely on epigenetic machinery (DNA methylation, histone modifications, ncRNA) for developmental plasticity and environmental adaptation.",
+            "Histone deacetylases (HDAs) are key epigenetic regulators; Arabidopsis has 18 HDA paralogs in three families: RPD3-like (12), SIR2 (2), and HD-tuins (4).",
+            "HDA6 (RPD3-like family) is involved in transcriptional gene silencing, nucleolar dominance, stress response, and flowering time regulation.",
+            "Two well-characterized chemical HDA inhibitors exist: Trichostatin A (TSA, pan-inhibitor of class I/II/IV) and sodium butyrate (NaB, selective class I/II inhibitor).",
+            "Previous proteomic studies of histone modifications were limited by analytical challenges including complex PTM patterns and the presence of histone variants.",
+        ],
+        "hypotheses": {
+            "tested": [
+                "HDA6 loss-of-function causes specific, measurable increases in histone acetylation at defined lysine sites.",
+                "Chemical HDA inhibitors (TSA, NaB) produce broader acetylation changes than single-gene mutations.",
+                "Phenotypic severity of chemical inhibition correlates with the degree of histone hyperacetylation.",
+            ],
+            "confirmed": [
+                "HDA6 targets specific acetylation sites: H3K14ac, H3K18ac, H3K23ac, H4K8ac, H4K16ac -- CONFIRMED",
+                "TSA produces broader acetylation changes than NaB (pan- vs selective inhibitor) -- CONFIRMED",
+                "Tri/tetra-acetylated H4 forms are NOT elevated in hda6, suggesting redundant HDA compensation -- CONFIRMED",
+            ],
+            "refuted": [
+                "Phenotypic severity does NOT correlate with acetylation changes -- NaB causes stronger phenotype but weaker acetylation than TSA (REFUTED).",
+                "Chemical inhibitors do NOT act solely through histone acetylation -- non-histone targets likely contribute to developmental effects (REFUTED assumption).",
+            ],
+        },
+        "design": {
+            "organism": "Arabidopsis thaliana ecotype Col-0",
+            "groups": ["WT control (Col-0)", "hda6-6 (EMS mutant)", "hda6-7 (T-DNA insertion)",
+                       "0.5 mM NaB", "1.5 mM NaB", "0.5 uM TSA", "1.5 uM TSA"],
+            "replicates": "6 biological replicates per group (seedlings from independent Petri dishes or leaves from independent plants)",
+            "total_samples": 114,
+            "timepoints": ["7-day seedlings (on MS medium)", "7-week plants (transferred to soil)"],
+            "sample_prep": "Filter-aided sample preparation (FASP) coupled with histone propionylation, trypsin digestion",
+            "instrument": "RSLCnano system + Orbitrap Elite hybrid spectrometer",
+            "quantification": "Extracted ion chromatogram (XIC) peak areas via Skyline 3.6",
+            "statistics": "Aitchison's compositional data methodology: log-ratio transformations, Hotelling's T-squared test, individual t-tests",
+        },
+        "results": [
+            "hda6 mutants show 9-11% increase in H3K9-R17 and H3K18-R26 acetylated peptide forms, and 7-8% in H4G4-R17.",
+            "HDA6 primarily targets mono-acetylated forms at H3K14, H3K18, H3K23, H4K8, and H4K16.",
+            "Tri- and tetra-acetylated H4 forms are NOT elevated in hda6 mutants, indicating redundant HDA activity compensates.",
+            "TSA (1.5 uM) causes 23% overall increase in H4 acetylation vs only 9% in H3 -- stronger effect on H4.",
+            "NaB causes the strongest phenotypic effects (severe root inhibition) but weaker acetylation changes than TSA.",
+            "After 7 weeks in soil (without inhibitors), ALL acetylation changes reversed to control levels -- full epigenetic recovery.",
+            "No consistent phenotype changes in hda6 seedlings, but delayed flowering in adult plants.",
+        ],
+        "discussion": [
+            "HDA6 has specific but limited substrate targets; other HDA family members provide functional redundancy.",
+            "The disconnect between NaB phenotypic severity and acetylation levels suggests non-histone protein targets of NaB.",
+            "Chemical HDA inhibitors affect plant development through mechanisms BEYOND histone deacetylase inhibition alone.",
+            "Full recovery of histone acetylation after inhibitor removal demonstrates remarkable epigenetic plasticity in plants.",
+            "The FASP-propionylation approach provides reliable quantification of combinatorial histone PTM patterns.",
+        ],
+        "limitations": [
+            "Only H3 and H4 histone peptides analyzed -- H2A, H2B, and linker histones not covered.",
+            "Only acetylation and methylation quantified; phosphorylation, ubiquitination, and other PTMs not measured.",
+            "Single time point for seedling analysis (7 days) -- temporal dynamics of acetylation changes not captured.",
+            "Chemical inhibitors affect ALL HDAs in their respective classes, making it difficult to attribute effects to specific enzymes.",
+            "NaB's mechanism of action beyond histone acetylation not fully characterized.",
+            "No ChIP-seq data to map genomic locations of affected histone marks.",
+            "Propionylation-based MS may introduce quantification biases for certain modifications.",
+        ],
+    },
+    "PXD046034": {
+        "citation": "Franek M, Nespor Dadejova M, Pirek P, Krystofova K, Dobisova T, Zdrahal Z, Dvorackova M, Lochmanova G. "
+                    "Histone chaperone deficiency in Arabidopsis plants triggers adaptive epigenetic changes "
+                    "in histone variants and modifications. (2024)",
+        "doi": "",
+        "year": 2024,
+        "journal": "Under review / Preprint",
+        "institution": "Mendel Center for Plant Genomics and Proteomics, CEITEC, Masaryk University, Brno, Czech Republic",
+        "background": [
+            "Histone chaperones mediate histone deposition during DNA replication, repair, and transcription.",
+            "CAF-1 (Chromatin Assembly Factor 1) is composed of FAS1, FAS2, and MSI1 subunits; mediates replication-dependent H3.1 deposition.",
+            "NAP1 family (NRP1, NRP2, NRP3) are nucleosome assembly proteins involved in H2A/H2B deposition.",
+            "fas1 mutants display pleiotropic phenotype: fasciated stems, dentate leaves, short roots, and increased sensitivity to genotoxic stress.",
+            "Loss of replication-dependent histone deposition may be compensated by replication-independent H3.3 variant incorporation.",
+        ],
+        "hypotheses": {
+            "tested": [
+                "Loss of histone chaperones causes measurable changes in histone variant proportions (H3.1 vs H3.3, H2A.Z).",
+                "Chromatin assembly factor mutations trigger compensatory (adaptive) epigenetic changes in histone modifications.",
+                "Different chaperone complexes (CAF-1 vs NAP1) affect distinct sets of histone marks and variants.",
+            ],
+            "confirmed": [
+                "fas1 mutants show altered H2A and H3 variant proportions -- CONFIRMED by variant-specific precursor quantification.",
+                "CAF-1 deficiency triggers adaptive changes in both histone variants and PTM patterns -- CONFIRMED.",
+                "H2A.Z interaction with NAP1 in cytoplasm maintained in fas1 but altered in some contexts -- CONFIRMED by BiFC.",
+            ],
+            "refuted": [
+                "m123-2 (NAP1 triple mutant) does NOT show obvious morphological phenotype -- subtle epigenetic effects only (PARTIALLY REFUTED expectation of strong phenotype).",
+            ],
+        },
+        "design": {
+            "organism": "Arabidopsis thaliana ecotype Col-0",
+            "groups": ["WT (wild-type)", "fas1 (CAF-1 deficient)", "fas1 m123-2 (double mutant)", "m123-2 (NAP1 triple mutant)"],
+            "replicates": "Multiple biological replicates per genotype",
+            "total_samples": 48,
+            "timepoints": ["Adult rosette stage"],
+            "sample_prep": "Histone extraction, propionylation, trypsin digestion, LC-MS/MS",
+            "instrument": "Q Exactive HF (Thermo Fisher)",
+            "quantification": "XIC peak areas, variant-specific precursor quantification",
+            "statistics": "One-way ANOVA with post hoc Tukey's HSD test (p < 0.05), immunofluorescence microscopy",
+        },
+        "results": [
+            "fas1 mutants display pleiotropic phenotype: fasciated stems, dentate leaves, short roots; enhanced by zeocin treatment.",
+            "m123-2 plants appear morphologically normal despite triple NAP1 knockout.",
+            "Significant changes in H2A and H3 variant proportions in mutant lines compared to wild-type.",
+            "H2A.Z interacts with NAP1 chaperone in the cytoplasm (BiFC); nuclear localization maintained in nap1 mutants.",
+            "Repressive marks (H3K9me2, H3K27me1) show altered nuclear distribution in fas1 vs wild-type.",
+            "Activating marks (H3K4me3, H4K16Ac) maintain dispersed nuclear pattern in both wild-type and fas1.",
+            "Two experimental designs (3905/4105) capture independent biological validation of findings.",
+        ],
+        "discussion": [
+            "CAF-1 deficiency has profound morphological and molecular consequences while NAP1 loss is largely compensated.",
+            "Adaptive epigenetic changes in histone variants may partially compensate for defective replication-dependent chromatin assembly.",
+            "The maintained nuclear localization of H2A.Z despite NAP1 loss suggests alternative deposition pathways exist.",
+            "Distribution patterns of repressive vs activating marks in fas1 nuclei suggest chromatin domain reorganization.",
+            "Both replication-dependent and -independent histone deposition pathways contribute to epigenetic homeostasis.",
+        ],
+        "limitations": [
+            "Full paper not available for complete analysis -- supplementary data only provides partial picture.",
+            "m123-2 phenotype is subtle and may require more sensitive or genome-wide assays to fully characterize.",
+            "Immunofluorescence provides nuclear-level but not gene-level resolution of histone mark distribution.",
+            "Interaction between CAF-1 and NAP1 pathways in the double mutant needs further dissection.",
+            "No transcriptomic data to correlate histone mark changes with gene expression changes.",
+        ],
+    },
+    "PXD046788": {
+        "citation": "Pirek P, Krystofova K, Kovacova I, Kromerova A, Zachova D, Helia O, Panzarova K, "
+                    "Fajkus J, Zdrahal Z, Lochmanova G, Fojtova M. "
+                    "Unraveling Epigenetic Changes in A. thaliana Calli: Impact of HDAC Inhibitors. "
+                    "Plants 2023; 12(24):4177.",
+        "doi": "10.3390/plants12244177",
+        "year": 2023,
+        "journal": "Plants (MDPI)",
+        "institution": "Mendel Centre for Plant Genomics and Proteomics, CEITEC, Masaryk University, Brno, Czech Republic",
+        "background": [
+            "Plant regeneration from dedifferentiated cells (callus) enables molecular bioengineering for crop improvement.",
+            "Callus formation shares features with lateral root initiation; xylem-pole pericycle cells are critical for both processes.",
+            "Over 10,000 differentially expressed genes were identified during leaf explant-derived callus formation.",
+            "Epigenetic modifications (DNA methylation, histone marks) play key roles in chromatin remodeling during callus induction.",
+            "H3K27me3, a repressive mark on developmentally silenced genes, is specifically modulated during early callus phases.",
+            "Histone deacetylase inhibitors (TSA, NaB) can modulate callus formation, but their specific epigenetic effects on calli were poorly understood.",
+            "Previous work by the same group (PXD014739) showed TSA/NaB effects on seedlings are not restricted to histone acetylation inhibition.",
+        ],
+        "hypotheses": {
+            "tested": [
+                "Callus formation involves significant changes in histone H3 variant composition (H3.1 vs H3.3).",
+                "Shoot-derived and root-derived calli have distinct epigenetic profiles reflecting their tissue of origin.",
+                "HDAC inhibitors (TSA, NaB) differentially affect histone marks during callus formation.",
+                "Long-term callus propagation homogenizes the epigenetic landscape regardless of tissue origin.",
+            ],
+            "confirmed": [
+                "H3.3 variant is significantly enriched in calli (H3.1:H3.3 from 3:1 in seedlings to ~1.3:1 in calli) -- CONFIRMED.",
+                "Shoot- and root-derived calli have distinct H3K27/K36 methylation patterns driven by H3.1 differences -- CONFIRMED.",
+                "TSA and NaB have distinct epigenetic effects: NaB-calli resemble root-derived, TSA-calli resemble shoot-derived calli -- CONFIRMED.",
+                "Long-term cultivation (1 year) homogenizes methylation marks between cR and cS -- CONFIRMED.",
+            ],
+            "refuted": [
+                "Expected large increase in histone acetylation in young calli was NOT observed -- chromatin relaxation is primarily driven by H3.3 enrichment, not acetylation (REFUTED assumption).",
+                "NaB was expected to have similar epigenetic effect as TSA on calli -- instead, NaB's impact on H4 acetylation was negligible while TSA significantly increased H4K5ac, K8ac, K12ac (REFUTED).",
+                "Long-term propagation was expected to homogenize ALL marks -- but acetylation diverged between 1y-cS and 1y-cR (PARTIALLY REFUTED).",
+            ],
+        },
+        "design": {
+            "organism": "Arabidopsis thaliana ecotype Col-0",
+            "groups": ["7-day seedlings (7ds)", "20d shoot calli CTR (cS)", "20d root calli CTR (cR)",
+                       "20d shoot calli NaB (NaB-cS)", "20d root calli NaB (NaB-cR)",
+                       "20d shoot calli TSA (TSA-cS)", "20d root calli TSA (TSA-cR)",
+                       "1-year shoot calli (1y-cS)", "1-year root calli (1y-cR)"],
+            "replicates": "5-6 biological replicates per group",
+            "total_samples": 58,
+            "timepoints": ["7-day seedlings", "20-day calli", "1-year calli"],
+            "sample_prep": "Nuclei isolation (Percoll gradient), histone extraction (H2SO4), "
+                          "FASP + propionylation, trypsin digestion on YM-10 Microcon filters",
+            "instrument": "Q Exactive HF-X with RSLCnano system (Thermo Fisher)",
+            "quantification": "XIC peak areas via Skyline v23.1, KNIME Analytics Platform for data processing",
+            "statistics": "Student's t-test (p < 0.05), one-way ANOVA with Tukey HSD (p < 0.01), "
+                         "hierarchical clustering (Euclidean distance, Average linkage)",
+        },
+        "results": [
+            "H3.1:H3.3 ratio decreased from 3:1 in seedlings to 1.3:1 (cR) and 1.8:1 (cS) -- H3.3 enrichment is the hallmark of callus.",
+            "TSA further promoted H3.3 increase (1.0:1.0 in TSA-cR) while NaB had minor effect on H3 variant ratio.",
+            "Differences in H3K27/K36 methylation between cR and cS were driven by H3.1 variant, not H3.3.",
+            "Lower acetylation (K9ac, K14ac, K18ac, K23ac) and K9me2 in calli vs seedlings -- unexpected given chromatin relaxation.",
+            "TSA significantly increased H4 acetylation (K5ac, K8ac, K12ac) with tri/tetra-acetylated forms, especially in TSA-cR.",
+            "NaB had negligible effect on H4 acetylation -- consistent with distinct mechanism of action.",
+            "Hierarchical clustering: 7ds form one cluster; cR+NaB-exposed form second; cS+TSA-exposed form third.",
+            "1-year calli: methylation marks fully homogenized between 1y-cR and 1y-cS.",
+            "1-year calli: acetylation marks DIVERGED -- 1y-cS showed higher H3 and H4 acetylation than 1y-cR.",
+            "TSA markedly supported callus formation from both shoot and root parts (visible at day 10).",
+        ],
+        "discussion": [
+            "H3.3 enrichment (not acetylation increase) is the primary mechanism for chromatin relaxation in early calli.",
+            "The distinct clustering of NaB-calli with cR and TSA-calli with cS reveals drug-specific epigenetic reprogramming trajectories.",
+            "HDACi accelerated the homogenization of epigenetic imprints between root- and shoot-derived calli within 20 days.",
+            "Despite expected hyperacetylation, young calli actually show reduced acetylation at H3K9, K14, K18, K23 compared to seedlings.",
+            "H3K27me2, an understudied repressive mark, showed considerable and variant-specific changes during callus formation.",
+            "The dual action of HDACs -- genome-wide acetylation increase plus targeted deacetylation at organ identity genes -- complicates interpretation.",
+            "Understanding epigenetic changes during callus formation is prerequisite for targeted plant regeneration and crop biotechnology.",
+            "This study builds on and extends the group's previous work (PXD014739) by examining callus-specific epigenetic dynamics.",
+        ],
+        "limitations": [
+            "Root histone extracts had low protein concentration -- direct root vs shoot comparison in seedlings not possible.",
+            "Only 20-day and 1-year time points analyzed for calli -- early callus induction dynamics (0-7 days) not captured.",
+            "Chemical derivatization (propionylation) may bias quantification of certain low-abundance modifications.",
+            "No ChIP-seq data to map genomic locations of variant-specific histone mark changes.",
+            "Only a single concentration of each HDACi used for calli (0.5 mM NaB, 0.5 uM TSA) -- dose-response not explored.",
+            "No transcriptomic data to correlate histone variant/PTM changes with gene expression.",
+            "H2A and H2B histone modifications not analyzed -- focus limited to H3 and H4.",
+            "Phenotype monitoring was qualitative (area quantification at days 10 and 20 only).",
+        ],
+    },
+}
+
+def _get_paper_info(exp_name):
+    """Find matching PAPER_INFO entry for an experiment name."""
+    for key in PAPER_INFO:
+        if key in exp_name:
+            return PAPER_INFO[key]
+    return None
+
+parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.12")
 parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
 parser.add_argument("--port", type=int, default=8050)
 parser.add_argument("--host", default="0.0.0.0")
@@ -1106,7 +1345,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                  "flexWrap":"wrap"}, children=[
                     html.Span("Histone PTM Quantification Dashboard", style={"color":"#94a3b8",
                               "fontSize":"15px","fontWeight":"400","letterSpacing":"0.5px"}),
-                    html.Span("v3.11", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
+                    html.Span("v3.12", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                               "padding":"3px 14px","borderRadius":"14px","fontSize":"12px","fontWeight":"700",
                               "color":"#0f1f13","boxShadow":"0 0 12px rgba(34,197,94,0.5), 0 0 4px rgba(34,197,94,0.3)"}),
                 ]),
@@ -1265,6 +1504,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
         dcc.Tab(label="Sample Browser", value="tab-browse", style=ts, selected_style=tss),
         dcc.Tab(label="Export to R", value="tab-export", style=ts, selected_style=tss),
         dcc.Tab(label="ndebug Compare", value="tab-ndebug", style=ts, selected_style=tss),
+        dcc.Tab(label="Paper & Design", value="tab-paper", style=ts, selected_style={**tss, "borderTop":"3px solid #0891b2","color":"#0891b2"}),
         dcc.Tab(label="Analysis Log", value="tab-log", style=ts, selected_style=tss),
     ]),
     html.Div(id="tab-out", style={"padding":"30px 48px","maxWidth":"1800px","margin":"0 auto"}),
@@ -1278,7 +1518,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                          "flexWrap":"wrap","marginBottom":"10px"}, children=[
             html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"17px","color":"#fff",
                        "letterSpacing":"-0.5px"}),
-            html.Span("v3.11", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
+            html.Span("v3.12", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
                        "background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                        "padding":"3px 12px","borderRadius":"10px",
                        "boxShadow":"0 0 8px rgba(34,197,94,0.4)"}),
@@ -1528,6 +1768,7 @@ def _rt(tab, exp, pal):
         if tab == "tab-export": return tab_export(d)
         if tab == "tab-ndebug": return tab_ndebug(exp)
         if tab == "tab-k79": return tab_k79(d, exp)
+        if tab == "tab-paper": return tab_paper(d, exp)
         return {"tab-hpf":tab_hpf,"tab-hptm":tab_hptm,"tab-qc":tab_qc,
                 "tab-pca":tab_pca,"tab-stats":tab_stats,"tab-upset":tab_upset,
                 "tab-region":tab_region,"tab-cmp":tab_cmp,"tab-pheno":tab_pheno,
@@ -5355,12 +5596,278 @@ def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, ad
 
 
 # ======================================================================
+# TAB: PAPER & DESIGN -- comprehensive paper/design information
+# ======================================================================
+
+def tab_paper(d, exp_name):
+    """Render the Paper & Design tab with rich paper/design information."""
+    info = _get_paper_info(exp_name)
+    exp_info = _get_exp_info(exp_name)
+
+    # -- Accent color for this tab (cyan/teal) --
+    ACC = "#0891b2"
+    ACC_L = "#ecfeff"
+    ACC_D = "#0e7490"
+    ACC_BORDER = "#a5f3fc"
+
+    # -- Common card style with teal accent --
+    _card = {**CS, "borderLeft": f"4px solid {ACC}", "marginBottom": "20px"}
+    _card_warn = {**CS, "borderLeft": "4px solid #d97706", "marginBottom": "20px",
+                  "backgroundColor": "#fffbeb"}
+
+    if not info:
+        # No paper info available -- show a helpful message with experiment info
+        children = [_st("Paper & Design", "Publication details and experimental design", icon="paper")]
+        children.append(html.Div(style=_card, children=[
+            html.H4("No Paper Information Available", style={"color": C["muted"], "margin": "0 0 10px"}),
+            html.P(f"No detailed paper information has been curated for the experiment '{exp_name}'.",
+                   style={"color": C["text2"], "margin": "0 0 10px"}),
+            html.P("Paper information is available for: PXD046788, PXD014739, PXD046034.",
+                   style={"color": C["text2"], "margin": "0"}),
+        ]))
+        if exp_info:
+            children.append(html.Div(style=_card, children=[
+                html.H4("Experiment Summary", style={"color": ACC_D, "margin": "0 0 12px", "fontWeight": "700"}),
+                html.P(exp_info.get("title", ""), style={"fontWeight": "600", "color": C["text"], "margin": "0 0 6px"}),
+                html.P(exp_info.get("summary", ""), style={"color": C["text2"], "margin": "0", "lineHeight": "1.7"}),
+            ]))
+        return html.Div(children)
+
+    # -- Build the full paper information layout --
+    children = [_st("Paper & Design", "Publication details and experimental design", icon="paper")]
+
+    # ---- 1. CITATION CARD ----
+    doi_link = []
+    if info.get("doi"):
+        doi_link = [
+            html.Span(" | ", style={"color": C["muted"], "margin": "0 6px"}),
+            html.A(f"DOI: {info['doi']}", href=f"https://doi.org/{info['doi']}",
+                   target="_blank", style={"color": ACC, "textDecoration": "none",
+                                           "fontWeight": "600", "fontSize": "13px",
+                                           "borderBottom": f"1px dashed {ACC}"}),
+        ]
+    journal_badge = html.Span(info.get("journal", ""),
+                              style={"backgroundColor": ACC_L, "color": ACC_D,
+                                     "padding": "3px 10px", "borderRadius": "6px",
+                                     "fontSize": "12px", "fontWeight": "600",
+                                     "border": f"1px solid {ACC_BORDER}"})
+    year_badge = html.Span(str(info.get("year", "")),
+                           style={"backgroundColor": "#f0fdf4", "color": "#166534",
+                                  "padding": "3px 10px", "borderRadius": "6px",
+                                  "fontSize": "12px", "fontWeight": "700",
+                                  "border": "1px solid #bbf7d0"})
+    children.append(html.Div(style={**_card, "borderLeft": f"4px solid {ACC}",
+                                     "background": f"linear-gradient(135deg, #fff 0%, {ACC_L} 100%)"}, children=[
+        html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px",
+                         "marginBottom": "12px"}, children=[
+            _svg_icon("paper", 20), html.H4("Citation", style={"margin": "0", "color": ACC_D, "fontWeight": "800"}),
+        ]),
+        html.P(info.get("citation", ""), style={"color": C["text"], "margin": "0 0 12px",
+                                                  "fontStyle": "italic", "lineHeight": "1.7",
+                                                  "fontSize": "14px"}),
+        html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px", "flexWrap": "wrap"}, children=[
+            journal_badge, year_badge,
+        ] + doi_link),
+        html.P(info.get("institution", ""), style={"color": C["muted"], "margin": "10px 0 0",
+                                                     "fontSize": "12px", "fontWeight": "500"}),
+    ]))
+
+    # ---- 2. BACKGROUND / STATE OF THE ART ----
+    bg_items = info.get("background", [])
+    if bg_items:
+        children.append(html.Div(style=_card, children=[
+            html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px",
+                             "marginBottom": "14px"}, children=[
+                _svg_icon("dna", 20),
+                html.H4("Background & State of the Art",
+                         style={"margin": "0", "color": ACC_D, "fontWeight": "800"}),
+            ]),
+            html.Ul([html.Li(item, style={"color": C["text2"], "marginBottom": "8px",
+                                           "lineHeight": "1.6", "fontSize": "13px"})
+                      for item in bg_items],
+                     style={"margin": "0", "paddingLeft": "20px"}),
+        ]))
+
+    # ---- 3. EXPERIMENTAL DESIGN ----
+    design = info.get("design", {})
+    if design:
+        # Build design details table
+        design_rows = []
+        field_map = [
+            ("Organism", "organism"), ("Groups", "groups"), ("Replicates", "replicates"),
+            ("Total Samples", "total_samples"), ("Time Points", "timepoints"),
+            ("Sample Preparation", "sample_prep"), ("Instrument", "instrument"),
+            ("Quantification", "quantification"), ("Statistics", "statistics"),
+        ]
+        for label, key in field_map:
+            val = design.get(key)
+            if val is None:
+                continue
+            if isinstance(val, list):
+                val_str = ", ".join(str(v) for v in val)
+            else:
+                val_str = str(val)
+            design_rows.append(
+                html.Tr([
+                    html.Td(label, style={"padding": "8px 14px", "fontWeight": "700",
+                                           "color": ACC_D, "fontSize": "13px",
+                                           "backgroundColor": ACC_L, "borderBottom": "1px solid #e2e8f0",
+                                           "whiteSpace": "nowrap", "verticalAlign": "top", "width": "160px"}),
+                    html.Td(val_str, style={"padding": "8px 14px", "color": C["text2"],
+                                             "fontSize": "13px", "borderBottom": "1px solid #e2e8f0",
+                                             "lineHeight": "1.6"}),
+                ])
+            )
+
+        children.append(html.Div(style=_card, children=[
+            html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px",
+                             "marginBottom": "14px"}, children=[
+                _svg_icon("microscope", 20),
+                html.H4("Experimental Design",
+                         style={"margin": "0", "color": ACC_D, "fontWeight": "800"}),
+            ]),
+            html.Table(html.Tbody(design_rows),
+                       style={"width": "100%", "borderCollapse": "collapse",
+                              "borderRadius": "8px", "overflow": "hidden",
+                              "border": "1px solid #e2e8f0"}),
+        ]))
+
+    # ---- 4. HYPOTHESES ----
+    hyp = info.get("hypotheses", {})
+    if hyp:
+        hyp_children = [
+            html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px",
+                             "marginBottom": "14px"}, children=[
+                _svg_icon("bar_chart", 20),
+                html.H4("Hypotheses",
+                         style={"margin": "0", "color": ACC_D, "fontWeight": "800"}),
+            ]),
+        ]
+
+        # Tested hypotheses (blue)
+        tested = hyp.get("tested", [])
+        if tested:
+            hyp_children.append(html.H5("Tested Hypotheses",
+                                         style={"color": "#1d4ed8", "margin": "14px 0 8px",
+                                                "fontWeight": "700", "fontSize": "14px"}))
+            for item in tested:
+                hyp_children.append(html.Div(style={"display": "flex", "alignItems": "flex-start",
+                                                      "gap": "10px", "marginBottom": "8px"}, children=[
+                    html.Span("TESTED", style={"backgroundColor": "#dbeafe", "color": "#1d4ed8",
+                                                "padding": "2px 8px", "borderRadius": "4px",
+                                                "fontSize": "10px", "fontWeight": "800",
+                                                "flexShrink": "0", "marginTop": "2px",
+                                                "border": "1px solid #93c5fd"}),
+                    html.Span(item, style={"color": C["text2"], "fontSize": "13px", "lineHeight": "1.5"}),
+                ]))
+
+        # Confirmed hypotheses (green)
+        confirmed = hyp.get("confirmed", [])
+        if confirmed:
+            hyp_children.append(html.H5("Confirmed",
+                                         style={"color": "#059669", "margin": "18px 0 8px",
+                                                "fontWeight": "700", "fontSize": "14px"}))
+            for item in confirmed:
+                hyp_children.append(html.Div(style={"display": "flex", "alignItems": "flex-start",
+                                                      "gap": "10px", "marginBottom": "8px"}, children=[
+                    html.Span("CONFIRMED", style={"backgroundColor": "#dcfce7", "color": "#059669",
+                                                    "padding": "2px 8px", "borderRadius": "4px",
+                                                    "fontSize": "10px", "fontWeight": "800",
+                                                    "flexShrink": "0", "marginTop": "2px",
+                                                    "border": "1px solid #86efac"}),
+                    html.Span(item, style={"color": C["text2"], "fontSize": "13px", "lineHeight": "1.5"}),
+                ]))
+
+        # Refuted hypotheses (red)
+        refuted = hyp.get("refuted", [])
+        if refuted:
+            hyp_children.append(html.H5("Refuted / Unexpected",
+                                         style={"color": "#dc2626", "margin": "18px 0 8px",
+                                                "fontWeight": "700", "fontSize": "14px"}))
+            for item in refuted:
+                hyp_children.append(html.Div(style={"display": "flex", "alignItems": "flex-start",
+                                                      "gap": "10px", "marginBottom": "8px"}, children=[
+                    html.Span("REFUTED", style={"backgroundColor": "#fef2f2", "color": "#dc2626",
+                                                  "padding": "2px 8px", "borderRadius": "4px",
+                                                  "fontSize": "10px", "fontWeight": "800",
+                                                  "flexShrink": "0", "marginTop": "2px",
+                                                  "border": "1px solid #fecaca"}),
+                    html.Span(item, style={"color": C["text2"], "fontSize": "13px", "lineHeight": "1.5"}),
+                ]))
+
+        children.append(html.Div(style=_card, children=hyp_children))
+
+    # ---- 5. KEY RESULTS ----
+    results = info.get("results", [])
+    if results:
+        result_items = []
+        for i, item in enumerate(results, 1):
+            result_items.append(html.Div(style={"display": "flex", "alignItems": "flex-start",
+                                                  "gap": "12px", "marginBottom": "10px"}, children=[
+                html.Span(str(i), style={"backgroundColor": ACC, "color": "#fff",
+                                          "width": "24px", "height": "24px", "borderRadius": "50%",
+                                          "display": "flex", "alignItems": "center", "justifyContent": "center",
+                                          "fontSize": "12px", "fontWeight": "800", "flexShrink": "0"}),
+                html.Span(item, style={"color": C["text2"], "fontSize": "13px", "lineHeight": "1.6"}),
+            ]))
+        children.append(html.Div(style=_card, children=[
+            html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px",
+                             "marginBottom": "14px"}, children=[
+                _svg_icon("chromatogram", 20),
+                html.H4("Key Results",
+                         style={"margin": "0", "color": ACC_D, "fontWeight": "800"}),
+            ]),
+        ] + result_items))
+
+    # ---- 6. DISCUSSION ----
+    discussion = info.get("discussion", [])
+    if discussion:
+        children.append(html.Div(style=_card, children=[
+            html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px",
+                             "marginBottom": "14px"}, children=[
+                _svg_icon("pca", 20),
+                html.H4("Discussion & Interpretation",
+                         style={"margin": "0", "color": ACC_D, "fontWeight": "800"}),
+            ]),
+            html.Ul([html.Li(item, style={"color": C["text2"], "marginBottom": "8px",
+                                           "lineHeight": "1.6", "fontSize": "13px"})
+                      for item in discussion],
+                     style={"margin": "0", "paddingLeft": "20px"}),
+        ]))
+
+    # ---- 7. LIMITATIONS & WEAKNESSES ----
+    limitations = info.get("limitations", [])
+    if limitations:
+        lim_items = []
+        for item in limitations:
+            lim_items.append(html.Div(style={"display": "flex", "alignItems": "flex-start",
+                                               "gap": "10px", "marginBottom": "8px"}, children=[
+                html.Span("!", style={"backgroundColor": "#fef3c7", "color": "#d97706",
+                                       "width": "20px", "height": "20px", "borderRadius": "50%",
+                                       "display": "flex", "alignItems": "center", "justifyContent": "center",
+                                       "fontSize": "12px", "fontWeight": "900", "flexShrink": "0",
+                                       "border": "1px solid #fde68a"}),
+                html.Span(item, style={"color": C["text2"], "fontSize": "13px", "lineHeight": "1.5"}),
+            ]))
+        children.append(html.Div(style=_card_warn, children=[
+            html.Div(style={"display": "flex", "alignItems": "center", "gap": "10px",
+                             "marginBottom": "14px"}, children=[
+                _svg_icon("warning", 20),
+                html.H4("Limitations & Weaknesses",
+                         style={"margin": "0", "color": "#92400e", "fontWeight": "800"}),
+            ]),
+        ] + lim_items))
+
+    return html.Div(children)
+
+
+# ======================================================================
 # RUN
 # ======================================================================
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.11")
+    print("  EpiProfile-Plants Dashboard v3.12")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
