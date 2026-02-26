@@ -1,0 +1,43 @@
+/* EpiProfile-Plants Dashboard v3.13 -- Sidebar Navigation Styles */
+
+/* ---- Sidebar scrollbar ---- */
+.sidebar-nav::-webkit-scrollbar { width: 5px; }
+.sidebar-nav::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(34,197,94,0.3); border-radius: 3px; }
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgba(34,197,94,0.5); }
+
+/* ---- Override Dash vertical-tabs default borders ---- */
+.tab-container--vert { border: none !important; background: transparent !important; }
+.tab-container--vert .tab-content { display: none !important; }
+.tab--vertical { border: none !important; outline: none !important; }
+.tab--vertical .tab { border-right: none !important; }
+
+/* ---- Hover effect on sidebar nav items ---- */
+.tab--vertical .tab:not(.tab--disabled):hover {
+    background-color: rgba(255,255,255,0.05) !important;
+    color: #d1d5db !important;
+    cursor: pointer;
+}
+
+/* ---- Dropdown z-index for header selectors ---- */
+.Select-menu-outer,
+.dash-dropdown .Select-menu-outer { z-index: 1000 !important; }
+
+/* ---- Smooth transition on sidebar tab items ---- */
+.tab--vertical .tab {
+    transition: all 0.15s ease !important;
+}
+
+/* ---- Remove blue focus outline on tabs ---- */
+.tab--vertical .tab:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* ---- Fix sidebar tab label alignment ---- */
+.tab--vertical .tab .tab-label {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+}
