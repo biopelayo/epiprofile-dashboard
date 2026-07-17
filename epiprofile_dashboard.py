@@ -235,7 +235,7 @@ ICONS = {
     "pin": f'<svg {_S}><path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>',
     # -- Normalize: wavy to straight --
     "normalize": f'<svg {_S}><path d="M2 8c2-3 4 3 6 0s4 3 6 0s4 3 6 0" opacity="0.4"/><line x1="2" y1="16" x2="20" y2="16"/><polyline points="17,13 20,16 17,19"/></svg>',
-    # -- Star: H3K79 validation spotlight --
+    # -- Star: target-mark validation spotlight --
     "star": f'<svg {_S}><polygon points="12,2 15,9 22,9 16.5,14 18.5,21 12,17 5.5,21 7.5,14 2,9 9,9" fill="#22c55e" fill-opacity="0.15"/></svg>',
     # -- Organism badge --
     "organism": f'<svg {_S}><path d="M12 22c-4 0-8-2-8-6s8-14 8-14 8 10 8 14-4 6-8 6z"/><line x1="12" y1="8" x2="12" y2="22"/><path d="M8 14c2-1 6-1 8 0"/></svg>',
@@ -3856,11 +3856,11 @@ def tab_region(d):
 
 
 # ======================================================================
-# TAB: H3K79 VALIDATION -- Star Section
+# TAB: TARGET-MARK VALIDATION -- Star Section
 # ======================================================================
 
 def tab_k79(d, exp_name):
-    """H3K79 validation: dedicated section for H3 73-83 region and K79 mods.
+    """Target-mark validation: dedicated section for the H3 73-83 region and its lysine modifications.
     Aggregates evidence from ratios, areas, RT, PSMs, and per-sample detail files."""
     children = []
     meta = d.get("metadata", pd.DataFrame())
@@ -3874,7 +3874,7 @@ def tab_k79(d, exp_name):
     psm = d.get("all_psm", pd.DataFrame())
     ld = d.get("layouts_dir", "")
 
-    # -- K79 features --
+    # -- target-mark features --
     k79_feats = [f for f in hpf.index if "K79" in str(f)] if not hpf.empty else []
     k79_hptm = [f for f in hptm.index if "K79" in str(f)] if not hptm.empty else []
     region_feats = [f for f in hpf.index if "73_83" in str(f)] if not hpf.empty else []
@@ -3922,7 +3922,7 @@ def tab_k79(d, exp_name):
     ]
     children.append(html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","marginBottom":"16px"}, children=cards))
 
-    # ---- 2. K79 RATIOS HEATMAP (hPF level) ----
+    # ---- 2. TARGET-MARK RATIOS HEATMAP (hPF level) ----
     if k79_feats and not hpf.empty:
         k79_df = hpf.loc[k79_feats].copy()
         # Sort columns by group
@@ -3942,7 +3942,7 @@ def tab_k79(d, exp_name):
             dcc.Graph(figure=fig_hm),
         ]))
 
-    # ---- 3. K79 SINGLE PTM RATIOS (hPTM level) ----
+    # ---- 3. TARGET-MARK SINGLE PTM RATIOS (hPTM level) ----
     if k79_hptm and not hptm.empty:
         k79_ptm_df = hptm.loc[k79_hptm]
         # Box plot by group
@@ -3965,7 +3965,7 @@ def tab_k79(d, exp_name):
                 dcc.Graph(figure=fig_box),
             ]))
 
-    # ---- 4. AREAS (MS1 intensity) for K79 features ----
+    # ---- 4. AREAS (MS1 intensity) for target-mark features ----
     if areas is not None and not areas.empty and k79_feats:
         k79_areas = areas.loc[[f for f in k79_feats if f in areas.index]]
         if not k79_areas.empty:
@@ -4019,7 +4019,7 @@ def tab_k79(d, exp_name):
             seq_c = seq_col[0]
             k79_psm = psm[psm[seq_c].str.contains("EIAQDFKTDLR", na=False, case=False)]
             if not k79_psm.empty:
-                # Also filter by K79 modifications
+                # Also filter by the target-mark modifications
                 mod_cols = [c for c in psm.columns if "modif" in c.lower()]
                 has_k79_mod = k79_psm.copy()
                 if mod_cols:
@@ -4160,9 +4160,9 @@ def tab_k79(d, exp_name):
                     dcc.Graph(figure=fig_adet),
                 ]))
 
-    # ---- 8. GLOBAL COMPARISON: K79 vs OTHER MODIFICATIONS ----
+    # ---- 8. GLOBAL COMPARISON: TARGET MARK vs OTHER MODIFICATIONS ----
     if not hpf.empty and k79_feats:
-        # Compare K79 detection rate vs all other features
+        # Compare target-mark detection rate vs all other features
         all_det_rates = (hpf > 0.001).mean(axis=1) * 100
         k79_rates = all_det_rates.loc[k79_feats]
         other_rates = all_det_rates.drop(k79_feats, errors="ignore")
