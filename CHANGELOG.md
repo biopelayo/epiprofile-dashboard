@@ -4,6 +4,52 @@ All notable changes to EpiProfile-Plants Dashboard.
 
 ---
 
+## v3.14 (2026-10-30)
+
+### Added
+- **Portable configuration**: experiments are declared in `experiments.json` (template: `experiments.example.json`), located via `--config`, `$EPIPROFILE_CONFIG` or next to the script. Relative paths resolve against the config file.
+- **CLI `NAME=PATH` syntax** and automatic inference of `ndebug` / `dataset` from names, paths and ratios filenames, so the ndebug Compare and Paper & Design tabs work for directories passed on the command line.
+- **Bundled demo dataset** (`examples/demo_experiment`, synthetic) loaded when nothing is configured; generator in `scripts/make_demo_data.py`.
+- **Smoke tests** (`tests/test_smoke.py`): load the demo and render all 15 tabs.
+- `EPIPROFILE_PORT` / `EPIPROFILE_HOST` environment variables, `--no-demo` flag.
+
+### Changed
+- Hard-coded Windows default paths removed from the source (moved to `experiments.example.json`).
+- Default bind host is now `127.0.0.1` (use `--host 0.0.0.0` to expose on the network).
+- Bare `except:` clauses narrowed to `except Exception:`.
+- README / WHITEPAPER updated to the current tab count and layout; `epiprofile.db` and `experiments.json` ignored by git.
+
+### Fixed
+- Missing experiment directories now exit with status 1 and an actionable message.
+
+---
+
+## v3.13 (2026-02-26)
+
+### Changed
+- Sidebar navigation panel replaces the horizontal tab strip; compact header; fixed experiment selector overlap.
+
+---
+
+## v3.12 (2026-02-22)
+
+### Added
+- **Paper & Design tab** with publication information for PXD046788, PXD014739 and PXD046034.
+
+---
+
+## v3.11 (2026-02-22)
+
+### Added
+- **H3K79 Validation tab** aggregating ratios, areas, RT, PSMs and per-sample detail files for the H3 73-83 region.
+- Tissue filter in Statistics and Comparisons.
+- Green SVG icon set for all sections.
+
+### Fixed
+- PUB layout template conflicts; PXD046034 phenodata path; duplicate legend kwarg in H3K79 box plot.
+
+---
+
 ## v3.10 (2026-02-21)
 
 ### Added

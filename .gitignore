@@ -17,3 +17,5 @@ Thumbs.db
 
 # Runtime SQLite analysis log
 epiprofile.db
+experiments.json
+.pytest_cache/

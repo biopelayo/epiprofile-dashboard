@@ -6,13 +6,13 @@ Interactive, publication-quality visualization dashboard for **EpiProfile-Plants
 ![Dash](https://img.shields.io/badge/Dash-4.0+-14532d?logo=plotly&logoColor=white)
 ![Plotly](https://img.shields.io/badge/Plotly-6.0+-3F4F75?logo=plotly&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-22c55e)
-![Version](https://img.shields.io/badge/Version-3.10-0f1f13)
+![Version](https://img.shields.io/badge/Version-3.14-0f1f13)
 
 ---
 
 ## Overview
 
-EpiProfile-Plants Dashboard provides **13 interconnected analysis modules** for exploring histone post-translational modification (PTM) data from mass spectrometry experiments. It correctly handles the three-level hierarchical structure of EpiProfile output and provides non-parametric statistics, PCA, biclustering, co-occurrence analysis, and R-ready data export -- all from a web browser with no programming required.
+EpiProfile-Plants Dashboard provides **15 interconnected analysis modules** for exploring histone post-translational modification (PTM) data from mass spectrometry experiments. It correctly handles the three-level hierarchical structure of EpiProfile output and provides non-parametric statistics, PCA, biclustering, co-occurrence analysis, and R-ready data export -- all from a web browser with no programming required.
 
 > See [WHITEPAPER.md](WHITEPAPER.md) for the full technical documentation.
 
@@ -32,7 +32,7 @@ The dashboard classifies EpiProfile output into three biological levels:
 
 ---
 
-## 12 Analysis Tabs
+## 15 Analysis Tabs
 
 | Tab | Key Features |
 |-----|-------------|
@@ -42,10 +42,12 @@ The dashboard classifies EpiProfile output into three biological levels:
 | **PCA & Clustering** | 2D/3D PCA, biplots, scree, dendrogram, correlation, biclustering, K-Means |
 | **Statistics** | Kruskal-Wallis + BH-FDR, volcano, enrichment, data source selector |
 | **UpSet / Co-occurrence** | Detection patterns, Jaccard index, log2 odds ratio, mutual exclusivity |
-| **Region Map** | Mean ratios at derivatized peptide level |
+| **Region Map** | Mean ratios at derivatized peptide level, sequence coverage, PTM landscape |
+| **H3K79 Validation** | Target-mark evidence for the H3 73-83 region: ratios, areas, RT, PSMs |
 | **Comparisons** | Mann-Whitney U pairwise, volcano, FC bars, MA plots |
 | **Phenodata** | Sample metadata viewer |
 | **Sample Browser** | PDF chromatograms, per-sample profiles |
+| **Paper & Design** | Publication metadata and experimental design for the loaded dataset |
 | **Export to R** | Filtered data + R script bundle (ZIP) |
 | **ndebug Compare** | Detection efficacy comparison between ndebug modes |
 | **Analysis Log** | SQLite-backed audit trail |
@@ -62,20 +64,48 @@ cd epiprofile-dashboard
 # Install dependencies
 pip install -r requirements.txt
 
-# Run with default experiments
+# Run with the bundled demo dataset (no configuration needed)
 python epiprofile_dashboard.py
 
 # Or with your own EpiProfile output directory
 python epiprofile_dashboard.py /path/to/epiprofile/output
 
-# Multiple experiments
-python epiprofile_dashboard.py /path/to/exp1 /path/to/exp2
+# Multiple experiments, optionally with explicit names
+python epiprofile_dashboard.py "PXD046788 ndebug_0=/data/PXD046788/RawData" /data/other_exp
 
-# Custom port
-python epiprofile_dashboard.py /path/to/output --port 8080
+# Custom port / host
+python epiprofile_dashboard.py /path/to/output --port 8080 --host 0.0.0.0
 ```
 
 Open **http://localhost:8050** in your browser.
+
+### Configuring experiments
+
+For a fixed set of experiments, copy `experiments.example.json` to `experiments.json`
+next to the script and edit the paths. The file is read automatically when the
+dashboard is launched without directories; a different location can be given with
+`--config PATH` or the `EPIPROFILE_CONFIG` environment variable.
+
+```json
+{
+  "PXD046788 ndebug_0": {
+    "dir": "/data/PXD046788/RawData",
+    "ratios": "histone_ratios.xls",
+    "singleptm_dir": "histone_layouts",
+    "phenodata": "/data/PXD046788/phenodata.tsv"
+  },
+  "Other experiment": "/data/other"
+}
+```
+
+Only `dir` is required. Relative paths are resolved against the config file.
+`ndebug` and `dataset` are inferred from the experiment name, directory and
+ratios filename (`ndebug_0`, `ndebug2`, `ndeg2`, `PXD######`) unless given
+explicitly; experiments that share a dataset but differ in ndebug mode become
+available in the **ndebug Compare** tab.
+
+Environment variables: `EPIPROFILE_CONFIG`, `EPIPROFILE_PORT`, `EPIPROFILE_HOST`.
+Pass `--no-demo` to fail instead of falling back to the demo dataset.
 
 ---
 
@@ -107,17 +137,18 @@ Jaccard similarity + log2 odds ratio matrices reveal PTM pairs that co-occur or 
 
 ## Supported Experiments
 
-Ships with 5 pre-configured *Arabidopsis thaliana* experiments:
+The dashboard is dataset-agnostic: any EpiProfile-Plants output directory can be
+loaded. A small synthetic demo (`examples/demo_experiment`, 12 samples, 3 groups,
+7 peptide regions) is bundled and loads when nothing else is configured. It can be
+regenerated with `python scripts/make_demo_data.py`.
 
-| Experiment | Samples | Groups | Data Available |
-|-----------|---------|--------|----------------|
-| PXD046788 | 58 | 5 | Ratios + Areas + RT |
-| PXD014739 | 114 | 7 | Ratios only |
-| PXD046034 | 48 | 8 | Ratios + Areas + RT |
-| Ontogeny 1exp | 34 | 4 | Ratios only |
-| Ontogeny RawData | 34 | 4 | Ratios + Areas + RT |
+`experiments.example.json` lists the *Arabidopsis thaliana* experiments the
+dashboard was developed against (ndebug_0 / ndebug_2 variants of PXD046788,
+PXD014739, PXD046034 and an ontogeny series). The **Paper & Design** tab shows
+curated publication metadata for these PRIDE accessions when the experiment name
+or path contains the accession.
 
-New experiments can be uploaded directly via the web interface (Replace or New mode).
+New experiments can also be uploaded directly via the web interface (Replace or New mode).
 
 ---
 
@@ -138,11 +169,23 @@ EpiProfile-Plants generates `.xls` files that are actually **tab-separated** (TS
 
 ```
 epiprofile-dashboard/
-|-- epiprofile_dashboard.py   # Main application (~3,700 lines)
-|-- WHITEPAPER.md             # Technical white paper
-|-- requirements.txt          # Python dependencies
-|-- .gitignore
+|-- epiprofile_dashboard.py    # Main application (~6,000 lines)
+|-- experiments.example.json   # Experiment configuration template
+|-- examples/demo_experiment/  # Synthetic demo dataset
+|-- scripts/make_demo_data.py  # Demo dataset generator
+|-- tests/test_smoke.py        # Loads the demo and renders every tab
+|-- assets/sidebar.css
+|-- WHITEPAPER.md              # Technical white paper
+|-- CHANGELOG.md
+|-- requirements.txt
 |-- README.md
+```
+
+Run the tests with:
+
+```bash
+pip install pytest
+python -m pytest -q tests
 ```
 
 ---
@@ -159,6 +202,11 @@ epiprofile-dashboard/
 
 | Version | Highlights |
 |---------|-----------|
+| v3.14 | Portable JSON configuration, CLI name inference, bundled demo dataset, smoke tests |
+| v3.13 | Sidebar navigation panel, compact header |
+| v3.12 | Paper & Design tab |
+| v3.11 | H3K79 Validation tab, tissue filter, SVG icons |
+| v3.10 | 7 experiments with ndebug variants, ndebug Compare tab |
 | v3.9 | PCA ellipses, silhouette analysis, Region Map with sequence context |
 | v3.8 | Biclustering fix, co-occurrence analysis, web upload, dark theme header |
 | v3.7 | Statistics bug fixes, Export to R tab |
@@ -176,7 +224,7 @@ epiprofile-dashboard/
 If you use this dashboard in your research, please cite:
 
 ```
-EpiProfile-Plants Dashboard v3.10
+EpiProfile-Plants Dashboard v3.14
 https://github.com/biopelayo/epiprofile-dashboard
 ```
 

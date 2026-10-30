@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.13 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.14 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -14,8 +14,9 @@ Features: SQLite analysis tracking, biclustering, data export, adaptive sizing,
           areas normalization (log2+QN), R-ready export bundles.
 
 Usage:
-  python epiprofile_dashboard.py <dir1> [dir2] ...
-  python epiprofile_dashboard.py                    # uses DEFAULTS
+  python epiprofile_dashboard.py <dir1> [NAME=dir2] ...
+  python epiprofile_dashboard.py --config experiments.json
+  python epiprofile_dashboard.py                    # experiments.json, else bundled demo
 Access:  http://localhost:8050
 """
 
@@ -255,45 +256,51 @@ ICONS = {
 # CONFIGURATION
 # ======================================================================
 
-DEFAULTS = {
-    "PXD046788 ndebug_0": {
-        "dir": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
-        "ratios": "histone_ratios.xls",
-        "ndebug": "ndebug_0", "dataset": "PXD046788",
-    },
-    "PXD046788 ndebug_2": {
-        "dir": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
-        "ratios": "histone_ratios_ndebug2.xls",
-        "ndebug": "ndebug_2", "dataset": "PXD046788",
-    },
-    "PXD014739 ndebug_0": {
-        "dir": r"D:\epiprofile_data\PXD014739\RawData",
-        "ratios": "histone_ratios_ndebug0.xls",
-        "ndebug": "ndebug_0", "dataset": "PXD014739",
-    },
-    "PXD014739 ndebug_2": {
-        "dir": r"D:\epiprofile_data\PXD014739\RawData",
-        "ratios": "histone_ratios_ndeg2.xls",
-        "singleptm_dir": "PXD014738_ndebug2_histone_layouts",
-        "ndebug": "ndebug_2", "dataset": "PXD014739",
-    },
-    "PXD046034": {
-        "dir": r"D:\epiprofile_data\PXD046034\MS1_MS2",
-        "phenodata": r"E:\EpiProfile_AT_PXD046034_raw\PXD046034\PXD046034\analysis_PXD046034\analysis\post_epiprofile\phenodata_PXD046034.tsv",
-        "ndebug": "default", "dataset": "PXD046034",
-    },
-    "Ontogeny ndebug_0": {
-        "dir": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\RawData",
-        "ratios": "histone_ratios_ndebug0_ontogenia.xls",
-        "singleptm_dir": "histone_layouts_ndebug_0",
-        "ndebug": "ndebug_0", "dataset": "Ontogeny",
-    },
-    "Ontogeny ndebug_2": {
-        "dir": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\RawData",
-        "ratios": "histone_ratios.xls",
-        "ndebug": "ndebug_2", "dataset": "Ontogeny",
-    },
-}
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEMO_DIR = os.path.join(SCRIPT_DIR, "examples", "demo_experiment")
+
+# Experiments are configured in a JSON file (see experiments.example.json):
+#   { "Experiment name": { "dir": "...", "ratios": "histone_ratios.xls",
+#                          "singleptm_dir": "...", "phenodata": "...",
+#                          "ndebug": "ndebug_0", "dataset": "PXD046788" } }
+# Lookup order: --config PATH, $EPIPROFILE_CONFIG, ./experiments.json next to
+# this script. Relative "dir"/"phenodata" paths are resolved against the
+# directory that holds the config file. Only "dir" is required.
+def load_config_file(path):
+    """Load an experiments JSON config. Returns {} if path is None/missing."""
+    if not path or not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as fh:
+        raw = json.load(fh)
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: top level must be an object mapping names to experiments")
+    base = os.path.dirname(os.path.abspath(path))
+    cfg = {}
+    for name, entry in raw.items():
+        if isinstance(entry, str):
+            entry = {"dir": entry}
+        if not isinstance(entry, dict) or "dir" not in entry:
+            print(f"WARN config: skipping '{name}' (needs a 'dir' field)"); continue
+        e = dict(entry)
+        e["dir"] = os.path.normpath(os.path.join(base, os.path.expanduser(e["dir"])))
+        if e.get("phenodata"):
+            e["phenodata"] = os.path.normpath(os.path.join(base, os.path.expanduser(e["phenodata"])))
+        cfg[name] = e
+    return cfg
+
+def infer_exp_meta(name, path="", ratios_file=None):
+    """Infer (ndebug, dataset) from an experiment name, directory and ratios filename.
+    'ndebug_0' / 'ndebug2' / 'ndeg2' style tokens map to 'ndebug_N'; a PXD accession
+    becomes the dataset id, otherwise the name without the ndebug token is used."""
+    hay = " ".join(x for x in [name, path or "", ratios_file or ""] if x)
+    m = re.search(r"nde(?:bu)?g[_\- ]?(\d)", hay, flags=re.I)
+    ndebug = f"ndebug_{m.group(1)}" if m else "default"
+    m2 = re.search(r"(PXD\d{6})", hay, flags=re.I)
+    if m2:
+        dataset = m2.group(1).upper()
+    else:
+        dataset = re.sub(r"[\s_\-]*nde(?:bu)?g[_\- ]?\d", "", name, flags=re.I).strip(" _-") or name
+    return ndebug, dataset
 
 # ---------- Experiment metadata (PXD info, paper summaries) ----------
 EXP_INFO = {
@@ -593,22 +600,59 @@ def _get_paper_info(exp_name):
             return PAPER_INFO[key]
     return None
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.13")
-parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
-parser.add_argument("--port", type=int, default=8050)
-parser.add_argument("--host", default="0.0.0.0")
+parser = argparse.ArgumentParser(
+    description="EpiProfile-Plants Dashboard v3.14",
+    epilog="Experiment directories may be given as PATH or NAME=PATH. With no "
+           "directories, experiments are read from --config / $EPIPROFILE_CONFIG / "
+           "experiments.json; with no config either, the bundled demo dataset is loaded.")
+parser.add_argument("dirs", nargs="*", help="EpiProfile output directories (PATH or NAME=PATH)")
+parser.add_argument("--config", default=os.environ.get("EPIPROFILE_CONFIG"),
+                    help="JSON experiments config (default: $EPIPROFILE_CONFIG or ./experiments.json)")
+parser.add_argument("--port", type=int, default=int(os.environ.get("EPIPROFILE_PORT", 8050)))
+parser.add_argument("--host", default=os.environ.get("EPIPROFILE_HOST", "127.0.0.1"))
+parser.add_argument("--no-demo", action="store_true",
+                    help="Do not fall back to the bundled demo dataset when nothing is configured")
 args, _ = parser.parse_known_args()
 
-if args.dirs:
-    # CLI mode: simple name->path mapping (no ndebug metadata)
-    EXPERIMENTS = {}
-    for p in args.dirs:
-        p = os.path.abspath(p)
-        EXPERIMENTS[os.path.basename(p) or p] = {"dir": p, "ndebug": "default", "dataset": os.path.basename(p)}
-else:
-    EXPERIMENTS = {k: v for k, v in DEFAULTS.items() if os.path.isdir(v.get("dir", ""))}
-    if not EXPERIMENTS:
-        print("ERROR: No valid experiment directories."); sys.exit(1)
+def build_experiments(dirs, config_path, allow_demo=True):
+    """Resolve the EXPERIMENTS mapping from CLI dirs, a config file, or the demo."""
+    exps = {}
+    if dirs:
+        for spec in dirs:
+            name, _, p = spec.rpartition("=") if "=" in spec and not os.path.isdir(spec) else ("", "", spec)
+            p = os.path.abspath(os.path.expanduser(p))
+            if not os.path.isdir(p):
+                print(f"WARN: not a directory, skipping: {p}"); continue
+            name = name or os.path.basename(p.rstrip(os.sep)) or p
+            if name in exps:
+                name = f"{name} ({len(exps)+1})"
+            nd, ds = infer_exp_meta(name, p)
+            exps[name] = {"dir": p, "ndebug": nd, "dataset": ds}
+        return exps, "cli"
+    cfg_path = config_path or os.path.join(SCRIPT_DIR, "experiments.json")
+    cfg = load_config_file(cfg_path)
+    if config_path and not cfg:
+        print(f"ERROR: config file not found or empty: {config_path}"); sys.exit(1)
+    for name, e in cfg.items():
+        if not os.path.isdir(e["dir"]):
+            print(f"WARN: '{name}' directory missing, skipping: {e['dir']}"); continue
+        nd, ds = infer_exp_meta(name, e["dir"], e.get("ratios"))
+        e.setdefault("ndebug", nd); e.setdefault("dataset", ds)
+        exps[name] = e
+    if exps:
+        return exps, cfg_path
+    if allow_demo and os.path.isdir(DEMO_DIR):
+        print("No experiments configured; loading bundled demo dataset (examples/demo_experiment).")
+        print("  Create experiments.json (see experiments.example.json) or pass directories on the command line.")
+        return {"Demo experiment": {"dir": DEMO_DIR, "ndebug": "default", "dataset": "Demo"}}, "demo"
+    return {}, None
+
+EXPERIMENTS, EXPERIMENTS_SOURCE = build_experiments(args.dirs, args.config, allow_demo=not args.no_demo)
+if not EXPERIMENTS:
+    print("ERROR: No valid experiment directories.")
+    print("  Pass one or more EpiProfile output directories, or create experiments.json")
+    print("  (see experiments.example.json), or set EPIPROFILE_CONFIG.")
+    sys.exit(1)
 
 # ======================================================================
 # DESIGN SYSTEM
@@ -942,7 +986,7 @@ def load_experiment(base_dir, ratios_file=None, singleptm_dir=None, phenodata_pa
             if not fp: fp = os.path.join(ld, fn) if os.path.exists(os.path.join(ld, fn)) else None
             if fp and os.path.exists(fp):
                 try: data["phenodata"] = pd.read_csv(fp, sep="\t"); break
-                except: pass
+                except Exception: pass
 
     # -- metadata --
     ref = data.get("hptm", data.get("hpf"))
@@ -1082,7 +1126,7 @@ def load_all_psm(ld, folders):
         if os.path.exists(fp):
             try:
                 df = pd.read_csv(fp, sep="\t"); df["_sample_folder"] = f; rows.append(df)
-            except: pass
+            except Exception: pass
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
@@ -1116,7 +1160,7 @@ def robust_group_test(df, meta, groups, is_log=False):
                 kw_stat, kw_p = kruskal(*arrays)
             else:
                 kw_stat, kw_p = np.nan, np.nan
-        except:
+        except Exception:
             kw_stat, kw_p = np.nan, np.nan
 
         # Means and medians
@@ -1170,7 +1214,7 @@ def pairwise_mw(df, meta, g1, g2, is_log=False):
                 results.append({"PTM":ptm,"U_stat":stat,"pval":p,"log2FC":fc,
                                 "mean_A":np.mean(va),"mean_B":np.mean(vb),
                                 "median_A":np.median(va),"median_B":np.median(vb)})
-            except: pass
+            except Exception: pass
     if not results: return pd.DataFrame()
     rdf = pd.DataFrame(results)
     if len(rdf) > 1:
@@ -1362,7 +1406,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                  "flexWrap":"wrap"}, children=[
                     html.Span("Histone PTM Quantification Dashboard", style={"color":"#94a3b8",
                               "fontSize":"14px","fontWeight":"400","letterSpacing":"0.5px"}),
-                    html.Span("v3.13", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
+                    html.Span("v3.14", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                               "padding":"3px 14px","borderRadius":"14px","fontSize":"11px","fontWeight":"700",
                               "color":"#0f1f13","boxShadow":"0 0 12px rgba(34,197,94,0.5)"}),
                 ]),
@@ -1575,7 +1619,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                  "flexWrap":"wrap","marginBottom":"8px"}, children=[
                     html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"16px","color":"#fff",
                                "letterSpacing":"-0.5px"}),
-                    html.Span("v3.13", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
+                    html.Span("v3.14", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
                                "background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                                "padding":"3px 12px","borderRadius":"10px",
                                "boxShadow":"0 0 8px rgba(34,197,94,0.4)"}),
@@ -1947,7 +1991,7 @@ def cluster_order(df, axis=0):
         data = df.fillna(0).values if axis==0 else df.fillna(0).values.T
         if data.shape[0] < 3: return list(df.index) if axis==0 else list(df.columns)
         return [list(df.index if axis==0 else df.columns)[i] for i in leaves_list(linkage(pdist(data),method="ward"))]
-    except: return list(df.index) if axis==0 else list(df.columns)
+    except Exception: return list(df.index) if axis==0 else list(df.columns)
 
 def _sc(label, val, color):
     return html.Div(style={**CS,"flex":"1","minWidth":"145px","textAlign":"center","padding":"20px 14px"}, children=[
@@ -2536,7 +2580,7 @@ def _pca_content(source, exp, pal):
             yaxis_title="Euclidean Distance (Ward)",
             title=dict(text="Hierarchical Clustering (Ward Linkage)", font=dict(size=16)),
             margin=dict(b=130))
-    except: dfig = go.Figure(); pfig(dfig, 380)
+    except Exception: dfig = go.Figure(); pfig(dfig, 380)
 
     # ---- 6. PAM (k-Medoids) CLUSTERING ----
     try:
@@ -2593,7 +2637,7 @@ def _pca_content(source, exp, pal):
         pam_fig.update_layout(
             xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
             title=dict(text=f"K-Means Clusters on PCA Space (K={best_k})", font=dict(size=16)))
-    except:
+    except Exception:
         sil_fig = go.Figure(); pfig(sil_fig, 300)
         sk_fig = go.Figure(); pfig(sk_fig, 300)
         pam_fig = go.Figure(); pfig(pam_fig, 350)
@@ -2619,7 +2663,7 @@ def _pca_content(source, exp, pal):
                        tickfont=dict(size=adaptive_font(n_feats))),
             xaxis_title="Distance (Ward)", title=dict(text="Feature Dendrogram", font=dict(size=16)),
             margin=dict(l=adaptive_margin_l(feat_dr["ivl"])))
-    except: feat_dfig = go.Figure(); pfig(feat_dfig, 350)
+    except Exception: feat_dfig = go.Figure(); pfig(feat_dfig, 350)
 
     k_vals = min(6, max(2, n_feats // 5))
     try:
@@ -2636,7 +2680,7 @@ def _pca_content(source, exp, pal):
                      [f"Cluster {i}" for i in cluster_means.index],
                      cs="Greens", title=f"Feature Clusters (K={k_vals}) x Group Means",
                      h=max(250, k_vals * 50))
-    except: km_hm = go.Figure(); pfig(km_hm, 300)
+    except Exception: km_hm = go.Figure(); pfig(km_hm, 300)
 
     # ---- 9. BICLUSTERING ----
     try:
@@ -3149,7 +3193,7 @@ def tab_upset(d):
                     # Fisher exact test (two-sided)
                     try:
                         _, pval = fisher_exact([[a, b], [c, dd]])
-                    except:
+                    except Exception:
                         pval = 1.0
                     pval_mat[i, j] = pval_mat[j, i] = pval
 
@@ -3165,7 +3209,7 @@ def tab_upset(d):
                 pvals = [r["Fisher_p"] for r in pair_results]
                 try:
                     _, fdr_vals, _, _ = multipletests(pvals, method="fdr_bh")
-                except:
+                except Exception:
                     fdr_vals = pvals
                 for r, fdr in zip(pair_results, fdr_vals):
                     r["FDR"] = round(fdr, 6)
@@ -3179,7 +3223,7 @@ def tab_upset(d):
                 order = leaves_list(link)
                 ptm_ordered = [ptm_names_f[i] for i in order]
                 log_or_ordered = log_or[order][:, order]
-            except:
+            except Exception:
                 ptm_ordered = ptm_names_f
                 log_or_ordered = log_or
 
@@ -4125,7 +4169,7 @@ def tab_k79(d, exp_name):
                                 total = vals.sum() if not vals.isna().all() else 0
                                 detail_rows.append({"Sample_Folder": fld, "Modification": mod_name,
                                                     "Block": "area", "Total": total})
-                    except:
+                    except Exception:
                         pass
                     break
         if detail_rows:
@@ -5926,7 +5970,7 @@ def tab_paper(d, exp_name):
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.13")
+    print("  EpiProfile-Plants Dashboard v3.14")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")
