@@ -14,3 +14,6 @@ Thumbs.db
 *.ms2
 *.raw
 *.zip
+
+# Runtime SQLite analysis log
+epiprofile.db
