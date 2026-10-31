@@ -4,6 +4,27 @@ All notable changes to EpiProfile-Plants Dashboard.
 
 ---
 
+## v3.15 (2026-10-31)
+
+### Added
+- **Tools & Report tab** (17th tab):
+  - **Dinosaur** MS1 feature detection (Teleman et al. 2016) run from the dashboard on every mzML of the experiment; `python ep_tools.py install` downloads the jar, `python ep_tools.py run x.mzML` runs it standalone. Feature tables (`*.features.tsv`) are loaded and summarised in the QC Dashboard (features per run, RT x m/z map, charge fraction).
+  - **Annotator**: spectrum viewer and fragment annotation for **mzML** (pyteomics) and RawConverter **.ms1/.ms2** files (native reader). ProForma peptidoforms, a/b/c/x/y/z ladders, ppm or Da tolerance, sequence-coverage strip, matched-ion table, explained intensity. Optional cross-check with **rustyms**, the engine of the Snijder-lab Annotator desktop app. One-click **MGF export** and **launch of the Annotator app** (`tools/` or `ANNOTATOR_BIN`).
+  - **PTMVision CSV export** (uniprot_id, position, modification_unimod_name, modification_unimod_id) for the Tubingen PTMVision web server.
+  - **Self-contained HTML report** (overview, metadata, z-score heatmap, group means, Kruskal-Wallis table, effect-size plot, detection matrix, PSM and Dinosaur summaries).
+- **Cross-Experiment tab** (16th tab): shared hPTM overlap table, z-scored group-mean heatmap across experiments, Spearman correlation matrix and scatter of experiment means.
+- **Statistics**: `ep_stats.py` with imputation (half-minimum, row median, kNN), batch correction (per-batch median centering, parametric empirical-Bayes **ComBat**), **Welch t** and **moderated t (limma-style squeezeVar)** in addition to Mann-Whitney, **Cliff's delta** and **Hedges' g** effect sizes in Comparisons, **epsilon-squared** for Kruskal-Wallis.
+- **Per-region detail files** for every region (`histone_layouts/<sample>/detail/<REGION>.xls`): charge-state resolved areas, RT boxplots and a per-sample table in Region Map; coverage summary in QC.
+- **PSM evidence**: `identification_list.xls` summarised column-agnostically (PSMs per sample, charge states, score distribution, spectral counts per peptide) in QC.
+- **Result cache** for PCA and Statistics content (cleared on upload).
+- Demo dataset now ships sample folders with PSM lists and region detail files, Dinosaur feature tables, a mini mzML and a mini .ms2.
+- `requirements-optional.txt` (pyteomics, psims, rustyms); 55 tests (`tests/test_modules.py` added).
+
+### Changed
+- Code split starts: `ep_stats.py`, `ep_io.py`, `ep_tools.py`, `ep_report.py` next to the main script.
+
+---
+
 ## v3.14 (2026-10-30)
 
 ### Added

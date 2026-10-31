@@ -14,8 +14,8 @@ DEMO = os.path.join(ROOT, "examples", "demo_experiment")
 SCRIPT = os.path.join(ROOT, "epiprofile_dashboard.py")
 
 TABS = ["tab-hpf", "tab-hptm", "tab-qc", "tab-pca", "tab-stats", "tab-upset",
-        "tab-region", "tab-k79", "tab-cmp", "tab-ndebug", "tab-pheno",
-        "tab-browse", "tab-paper", "tab-export", "tab-log"]
+        "tab-region", "tab-k79", "tab-cmp", "tab-ndebug", "tab-cross", "tab-pheno",
+        "tab-browse", "tab-paper", "tab-tools", "tab-export", "tab-log"]
 
 
 @pytest.fixture(scope="session")
@@ -132,3 +132,41 @@ def test_xlsx_export(dash_mod):
     book = pd.read_excel(io.BytesIO(content), sheet_name=None)
     assert "data" in book and "metadata" in book
     assert book["data"].shape[0] == 26
+
+
+def test_evidence_loaded_from_demo(dash_mod):
+    d = dash_mod.EXP_DATA["Demo ndebug_0"]
+    assert len(d["sample_folders"]) == 12 and len(d["all_psm"]) > 500
+    assert d["region_details"]["region"].nunique() == 2
+    assert d["dinosaur"]["sample"].nunique() == 2
+    assert any(f.endswith(".ms2") for f in d["ms_files"])
+
+
+def test_comparison_methods_and_region_detail(dash_mod):
+    for test, imp, batch in [("mannwhitney", "none", "none"), ("welch", "min_half", "none"), ("moderated_t", "knn", "median_center")]:
+        out = str(dash_mod._cmp("Control", "TSA", "hptm", "all", "none", -1.301, "All", test, imp, batch, "Demo ndebug_0"))
+        assert "Traceback" not in out, test
+    assert "Traceback" not in str(dash_mod._region_det_content("H3_73_83", "Demo ndebug_0"))
+    assert "Traceback" not in str(dash_mod.tab_cross("Demo ndebug_0"))
+
+
+def test_tools_tab_callbacks(dash_mod):
+    f = os.path.join(DEMO, "ms2", "Control_Sh2.ms2")
+    opts, val = dash_mod._tools_scan_options(f)
+    assert len(opts) == 3 and val == 2001
+    dash_mod.ctx = type("c", (), {"triggered_id": "tools-spec-go"})()
+    out = str(dash_mod._tools_spectrum(1, 2001, f, "KSTGGK[Acetyl]APR", 20, "ppm", ["b", "y"], "Demo ndebug_0"))
+    assert "Traceback" not in out and "Matched ions" in out
+    assert dash_mod._tools_mgf(1, f, 2001, "")["filename"] == "Control_Sh2_scan2001.mgf"
+    html = dash_mod.build_experiment_report(dash_mod.EXP_DATA["Demo ndebug_0"], "Demo ndebug_0")
+    assert "<section" in html and "Kruskal" in html
+    dash_mod.ctx = type("c", (), {"triggered_id": "tools-ptmvision"})()
+    data, msg = dash_mod._tools_exports(1, 0, "Demo ndebug_0")
+    assert data["filename"].endswith(".csv") and "sites" in msg
+
+
+def test_result_cache(dash_mod):
+    dash_mod._CACHE.clear()
+    a = dash_mod._stats_filtered("ratios", "All", "All", "all", "all", -1.301, "Demo ndebug_0")
+    b = dash_mod._stats_filtered("ratios", "All", "All", "all", "all", -1.301, "Demo ndebug_0")
+    assert a is b and len(dash_mod._CACHE) >= 1

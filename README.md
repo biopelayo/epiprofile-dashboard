@@ -6,13 +6,13 @@ Interactive, publication-quality visualization dashboard for **EpiProfile-Plants
 ![Dash](https://img.shields.io/badge/Dash-4.0+-14532d?logo=plotly&logoColor=white)
 ![Plotly](https://img.shields.io/badge/Plotly-6.0+-3F4F75?logo=plotly&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-22c55e)
-![Version](https://img.shields.io/badge/Version-3.14-0f1f13)
+![Version](https://img.shields.io/badge/Version-3.15-0f1f13)
 
 ---
 
 ## Overview
 
-EpiProfile-Plants Dashboard provides **15 interconnected analysis modules** for exploring histone post-translational modification (PTM) data from mass spectrometry experiments. It correctly handles the three-level hierarchical structure of EpiProfile output and provides non-parametric statistics, PCA, biclustering, co-occurrence analysis, and R-ready data export -- all from a web browser with no programming required.
+EpiProfile-Plants Dashboard provides **17 interconnected analysis modules** for exploring histone post-translational modification (PTM) data from mass spectrometry experiments. It correctly handles the three-level hierarchical structure of EpiProfile output and provides non-parametric statistics, PCA, biclustering, co-occurrence analysis, and R-ready data export -- all from a web browser with no programming required.
 
 > See [WHITEPAPER.md](WHITEPAPER.md) for the full technical documentation.
 
@@ -34,24 +34,26 @@ The dashboard classifies EpiProfile output into three biological levels:
 
 ---
 
-## 15 Analysis Tabs
+## 17 Analysis Tabs
 
 | Tab | Key Features |
 |-----|-------------|
 | **Peptidoforms (hPF)** | Clustered heatmap, 6 interactive filters, violin plots, editable DataTable |
 | **Single PTMs (hPTM)** | Z-score heatmap, grouped bars, violin/box plots |
-| **QC Dashboard** | Missingness, completeness, area distributions, before/after QN |
+| **QC Dashboard** | Missingness, completeness, area distributions, before/after QN, PSM evidence, Dinosaur MS1 features, region-detail coverage |
 | **PCA & Clustering** | 2D/3D PCA, biplots, scree, dendrogram, correlation, biclustering, K-Means |
-| **Statistics** | Kruskal-Wallis + BH-FDR, volcano, enrichment, data source selector |
+| **Statistics** | Kruskal-Wallis + BH-FDR + epsilon-squared, volcano, enrichment, data source selector |
 | **UpSet / Co-occurrence** | Detection patterns, Jaccard index, log2 odds ratio, mutual exclusivity |
-| **Region Map** | Mean ratios at derivatized peptide level, sequence coverage, PTM landscape |
+| **Region Map** | Mean ratios at derivatized peptide level, sequence coverage, PTM landscape, charge-state detail per region |
 | **H3K79 Validation** | Target-mark evidence for the H3 73-83 region: ratios, areas, RT, PSMs |
-| **Comparisons** | Mann-Whitney U pairwise, volcano, FC bars, MA plots |
+| **Comparisons** | Mann-Whitney U, Welch t or moderated t (limma-style); imputation and batch correction (median centering, ComBat); Cliff's delta, Hedges' g; volcano, FC bars, MA plots |
 | **Phenodata** | Sample metadata viewer |
 | **Sample Browser** | PDF chromatograms, per-sample profiles |
 | **Paper & Design** | Publication metadata and experimental design for the loaded dataset |
 | **Export to R** | Filtered data + R script bundle (ZIP) |
 | **ndebug Compare** | Detection efficacy comparison between ndebug modes |
+| **Cross-Experiment** | Shared hPTMs across loaded experiments: overlap, z-scored group means, correlation |
+| **Tools & Report** | Dinosaur MS1 features, Annotator (mzML / ms1 / ms2 spectra, ProForma fragment annotation, MGF export), PTMVision CSV, HTML report |
 | **Analysis Log** | SQLite-backed audit trail |
 
 ---
@@ -141,7 +143,7 @@ Jaccard similarity + log2 odds ratio matrices reveal PTM pairs that co-occur or 
 
 The dashboard is dataset-agnostic: any EpiProfile-Plants output directory can be
 loaded. A small synthetic demo (`examples/demo_experiment`, 12 samples, 3 groups,
-7 peptide regions) is bundled and loads when nothing else is configured. It can be
+7 peptide regions, per-sample PSM and region-detail files, Dinosaur features, a mini mzML and .ms2) is bundled and loads when nothing else is configured. It can be
 regenerated with `python scripts/make_demo_data.py`.
 
 `experiments.example.json` lists the *Arabidopsis thaliana* experiments the
@@ -171,17 +173,38 @@ EpiProfile-Plants generates `.xls` files that are actually **tab-separated** (TS
 
 ```
 epiprofile-dashboard/
-|-- epiprofile_dashboard.py    # Main application (~6,000 lines)
+|-- epiprofile_dashboard.py    # Main application (Dash layout + callbacks)
+|-- ep_stats.py                # Imputation, batch correction (ComBat), moderated t, effect sizes
+|-- ep_io.py                   # Region detail files, PSMs, Dinosaur, mzML/ms1/ms2, annotator, PTMVision
+|-- ep_tools.py                # Dinosaur / Annotator installers and runners
+|-- ep_report.py               # Self-contained HTML report
+|-- requirements-optional.txt  # pyteomics, psims, rustyms
 |-- experiments.example.json   # Experiment configuration template
 |-- examples/demo_experiment/  # Synthetic demo dataset
 |-- scripts/make_demo_data.py  # Demo dataset generator
-|-- tests/test_smoke.py        # Loads the demo and renders every tab
+|-- tests/                     # Smoke tests (every tab) + module unit tests
 |-- assets/sidebar.css
 |-- WHITEPAPER.md              # Technical white paper
 |-- CHANGELOG.md
 |-- requirements.txt
 |-- README.md
 ```
+
+### External tools and optional dependencies
+
+```bash
+pip install -r requirements-optional.txt   # pyteomics + psims (mzML), rustyms (annotation cross-check)
+python ep_tools.py install                 # downloads Dinosaur (Java 8+) into tools/
+python ep_tools.py run sample.mzML         # MS1 feature detection -> sample.features.tsv
+python ep_tools.py annotator               # locate / launch the Annotator desktop app
+```
+
+| Tool | What the dashboard does with it |
+|------|--------------------------------|
+| [Dinosaur](https://github.com/fickludd/dinosaur) | Runs it on the experiment's mzML files from **Tools & Report**; loads `*.features.tsv` into the QC Dashboard. |
+| [Annotator](https://github.com/snijderlab/annotator) / [rustyms](https://github.com/snijderlab/rustyms) | Built-in spectrum viewer for mzML and `.ms1`/`.ms2`, offline b/y ladder annotation of ProForma peptidoforms, rustyms cross-check, MGF export and launch of the desktop app (`tools/annotator*` or `ANNOTATOR_BIN`). |
+| [PTMVision](https://ptmvision-tuevis.cs.uni-tuebingen.de/) | Exports a site-level CSV (UniProt accession, position, Unimod name/id) ready for upload. |
+| [PTMViz](https://pubmed.ncbi.nlm.nih.gov/34039258/) | Consumes EpiProfile output directly; export the ratios CSV from **Export to R**. |
 
 Run the tests with:
 
@@ -204,6 +227,7 @@ python -m pytest -q tests
 
 | Version | Highlights |
 |---------|-----------|
+| v3.15 | Tools & Report (Dinosaur, Annotator, PTMVision, HTML report), Cross-Experiment, ComBat / moderated t / effect sizes, region detail and PSM evidence |
 | v3.14 | Portable JSON configuration, CLI name inference, bundled demo dataset, smoke tests |
 | v3.13 | Sidebar navigation panel, compact header |
 | v3.12 | Paper & Design tab |
@@ -226,7 +250,7 @@ python -m pytest -q tests
 If you use this dashboard in your research, please cite:
 
 ```
-EpiProfile-Plants Dashboard v3.14
+EpiProfile-Plants Dashboard v3.15
 https://github.com/biopelayo/epiprofile-dashboard
 ```
 

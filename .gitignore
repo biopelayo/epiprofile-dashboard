@@ -19,3 +19,9 @@ Thumbs.db
 epiprofile.db
 experiments.json
 .pytest_cache/
+
+# downloaded external tools and scratch exports
+tools/*.jar
+tools/*.part
+tools/*.mgf
+tools/annotator*
