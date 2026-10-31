@@ -7,6 +7,9 @@ All notable changes to EpiProfile-Plants Dashboard.
 ## v3.14 (2026-10-30)
 
 ### Added
+- **Upload accepts CSV, TSV, real Excel (.xlsx) and EpiProfile's tab-separated .xls**; delimiter is sniffed automatically. Phenodata column aliases (`Sample`, `Group`, `Condition`...) are mapped onto `Sample_Name` / `Sample_Group`.
+- **Excel export** (`.xlsx`, one sheet per table) in Export to R.
+- Screenshots of the demo dataset in `docs/screenshots/`.
 - **Portable configuration**: experiments are declared in `experiments.json` (template: `experiments.example.json`), located via `--config`, `$EPIPROFILE_CONFIG` or next to the script. Relative paths resolve against the config file.
 - **CLI `NAME=PATH` syntax** and automatic inference of `ndebug` / `dataset` from names, paths and ratios filenames, so the ndebug Compare and Paper & Design tabs work for directories passed on the command line.
 - **Bundled demo dataset** (`examples/demo_experiment`, synthetic) loaded when nothing is configured; generator in `scripts/make_demo_data.py`.
@@ -20,6 +23,7 @@ All notable changes to EpiProfile-Plants Dashboard.
 - README / WHITEPAPER updated to the current tab count and layout; `epiprofile.db` and `experiments.json` ignored by git.
 
 ### Fixed
+- **Dash 4 compatibility**: header Experiment / Palette dropdowns rendered white-on-white (new `.dash-dropdown-*` markup inherited the header text colour); PCA, Statistics and ndebug Compare stayed empty until a control was touched (`prevent_initial_call` on their content callbacks).
 - Missing experiment directories now exit with status 1 and an actionable message.
 
 ---

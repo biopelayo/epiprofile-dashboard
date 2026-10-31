@@ -726,6 +726,59 @@ TDC = [{"if":{"state":"active"},"backgroundColor":"#eef2ff","border":f"1px solid
 # DATA LOADERS
 # ======================================================================
 
+def read_table_auto(path_or_buf, filename="", **kw):
+    """Read a tabular file as TSV / CSV / Excel, picking the parser from the
+    extension and, for text, from a delimiter sniff of the first line.
+    EpiProfile's .xls files are really tab-separated text, so .xls is tried as
+    text first and only falls back to a real Excel reader if that fails."""
+    name = (filename or (path_or_buf if isinstance(path_or_buf, str) else "")).lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        if isinstance(path_or_buf, (bytes, bytearray)):
+            path_or_buf = BytesIO(bytes(path_or_buf))
+        return pd.read_excel(path_or_buf, **kw)
+    if isinstance(path_or_buf, (bytes, bytearray)):
+        try:
+            text = path_or_buf.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                text = path_or_buf.decode("latin-1")
+            except Exception:
+                text = None
+        if text is None or (name.endswith(".xls") and text[:2] == "\xd0\xcf"):
+            return pd.read_excel(BytesIO(bytes(path_or_buf)), **kw)
+        path_or_buf = StringIO(text)
+    if hasattr(path_or_buf, "read"):
+        head = path_or_buf.readline(); path_or_buf.seek(0)
+    else:
+        with open(path_or_buf, "r", errors="replace") as fh:
+            head = fh.readline()
+    if "\t" in head: sep = "\t"
+    elif name.endswith(".csv") or head.count(",") > head.count(";"): sep = ","
+    elif ";" in head: sep = ";"
+    else: sep = "\t"
+    return pd.read_csv(path_or_buf, sep=sep, **kw)
+
+def decode_upload(content, filename=""):
+    """Decode a dcc.Upload payload into a DataFrame via read_table_auto."""
+    _, content_string = content.split(",", 1)
+    return read_table_auto(base64.b64decode(content_string), filename)
+
+PHENO_ALIASES = {"sample": "Sample_Name", "sample_name": "Sample_Name", "samplename": "Sample_Name",
+                 "name": "Sample_Name", "group": "Sample_Group", "sample_group": "Sample_Group",
+                 "condition": "Sample_Group", "treatment": "Sample_Group"}
+
+def normalize_phenodata(df):
+    """Map common column aliases (Sample, Group, Condition...) onto the
+    Sample_Name / Sample_Group names the dashboard expects."""
+    ren = {}
+    have = set(df.columns)
+    for c in df.columns:
+        key = str(c).strip().lower()
+        tgt = PHENO_ALIASES.get(key)
+        if tgt and tgt not in have and tgt not in ren.values():
+            ren[c] = tgt
+    return df.rename(columns=ren) if ren else df
+
 def try_read_tsv(path):
     return pd.read_csv(path, sep="\t")
 
@@ -974,7 +1027,7 @@ def load_experiment(base_dir, ratios_file=None, singleptm_dir=None, phenodata_pa
     # If explicit path provided, use it directly
     if phenodata_path and os.path.exists(phenodata_path):
         try:
-            data["phenodata"] = pd.read_csv(phenodata_path, sep="\t")
+            data["phenodata"] = normalize_phenodata(read_table_auto(phenodata_path))
             print(f"    Phenodata: loaded from explicit path")
         except Exception as pe:
             print(f"    WARN phenodata: {pe}")
@@ -985,7 +1038,7 @@ def load_experiment(base_dir, ratios_file=None, singleptm_dir=None, phenodata_pa
             fp = find_file(base_dir, fn)
             if not fp: fp = os.path.join(ld, fn) if os.path.exists(os.path.join(ld, fn)) else None
             if fp and os.path.exists(fp):
-                try: data["phenodata"] = pd.read_csv(fp, sep="\t"); break
+                try: data["phenodata"] = normalize_phenodata(read_table_auto(fp)); break
                 except Exception: pass
 
     # -- metadata --
@@ -1775,9 +1828,7 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
 
     if pheno_content:
         try:
-            _, content_string = pheno_content.split(",")
-            decoded = base64.b64decode(content_string).decode("utf-8")
-            pheno_df = pd.read_csv(StringIO(decoded), sep="\t")
+            pheno_df = normalize_phenodata(decode_upload(pheno_content, pheno_name))
             # Validate required columns
             missing = [c for c in ["Sample_Name","Sample_Group"] if c not in pheno_df.columns]
             if missing:
@@ -1802,9 +1853,7 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
 
     if ratios_content:
         try:
-            _, content_string = ratios_content.split(",")
-            decoded = base64.b64decode(content_string).decode("utf-8")
-            raw = pd.read_csv(StringIO(decoded), sep="\t")
+            raw = decode_upload(ratios_content, ratios_name)
             parsed = parse_ratios_hierarchy(raw)
             d["hpf"] = parsed["hpf_df"]
             d["hpf_meta"] = parsed["hpf_meta"]
@@ -1840,9 +1889,9 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
 
     if sptm_content:
         try:
-            _, content_string = sptm_content.split(",")
-            decoded = base64.b64decode(content_string).decode("utf-8")
-            sptm_df = pd.read_csv(StringIO(decoded), sep="\t", index_col=0)
+            sptm_df = decode_upload(sptm_content, sptm_name)
+            sptm_df = sptm_df.set_index(sptm_df.columns[0])
+            sptm_df.columns = [c.split(",",1)[1] if "," in str(c) else str(c) for c in sptm_df.columns]
             sptm_df = sptm_df.apply(pd.to_numeric, errors="coerce")
             d["hptm"] = sptm_df
             d["description"] = build_desc(d)
@@ -2433,8 +2482,7 @@ def tab_pca(d):
 
 
 @callback(Output("pca-out","children"),
-          Input("pca-source","value"), Input("cur-exp","data"), Input("cur-palette","data"),
-          prevent_initial_call=True)
+          Input("pca-source","value"), Input("cur-exp","data"), Input("cur-palette","data"))
 def _pca_content(source, exp, pal):
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
@@ -2866,7 +2914,7 @@ def tab_stats(d):
           Input("stats-source","value"), Input("stats-design","value"), Input("stats-tissue","value"),
           Input("stats-show","value"),
           Input("stats-classify","value"), Input("stats-fdr","value"),
-          Input("cur-exp","data"), prevent_initial_call=True)
+          Input("cur-exp","data"))
 def _stats_filtered(source, design, tissue, show, classify, fdr_log, exp):
     t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
@@ -4313,8 +4361,7 @@ def tab_ndebug(current_exp):
 
 @callback(Output("ndebug-out", "children"),
           Input("ndebug-a", "value"), Input("ndebug-b", "value"),
-          Input("ndebug-level", "value"), Input("cur-palette", "data"),
-          prevent_initial_call=True)
+          Input("ndebug-level", "value"), Input("cur-palette", "data"))
 def _ndebug_compare(exp_a, exp_b, level, pal):
     if not exp_a or not exp_b or exp_a not in EXP_DATA or exp_b not in EXP_DATA:
         return html.P("Select two experiments to compare.", style={"color": C["muted"]})
@@ -5199,6 +5246,7 @@ def tab_export(d):
     format_opts = [
         {"label": "CSV (comma-separated)", "value": "csv"},
         {"label": "TSV (tab-separated)", "value": "tsv"},
+        {"label": "Excel workbook (.xlsx, one sheet per table)", "value": "xlsx"},
         {"label": "R Script + Data (ready-to-load .R + .csv)", "value": "r_bundle"},
     ]
 
@@ -5576,6 +5624,21 @@ def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, ad
     ts = datetime.now().strftime("%Y%m%d_%H%M")
     sep_char = "," if fmt == "csv" else "\t"
     ext = "csv" if fmt == "csv" else "tsv"
+
+    if fmt == "xlsx":
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+            sheets["data"].to_excel(xw, sheet_name="data")
+            if "statistics" in sheets: sheets["statistics"].to_excel(xw, sheet_name="statistics", index=False)
+            if "pairwise" in sheets: sheets["pairwise"].to_excel(xw, sheet_name="pairwise", index=False)
+            if add_meta and "meta" in add_meta:
+                export_samps = list(sheets["data"].columns)
+                meta[meta["Sample"].isin(export_samps)].to_excel(xw, sheet_name="metadata", index=False)
+        buf.seek(0)
+        fname = f"{exp_name}_{source}_{ts}.xlsx"
+        log_analysis(exp, "export_xlsx", {"source": source}, sheets["data"].shape[0], 0,
+                     f"XLSX export {sheets['data'].shape}", int((time.time()-t0)*1000))
+        return dcc.send_bytes(buf.getvalue(), fname), html.P(f"Exported {fname}", style={"color":C["green"]})
 
     if fmt == "r_bundle":
         # Create a ZIP with R script + CSV data files + metadata

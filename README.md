@@ -16,6 +16,8 @@ EpiProfile-Plants Dashboard provides **15 interconnected analysis modules** for 
 
 > See [WHITEPAPER.md](WHITEPAPER.md) for the full technical documentation.
 
+![Peptidoforms tab on the bundled demo dataset](docs/screenshots/00_home.png)
+
 ---
 
 ## Data Hierarchy
@@ -148,7 +150,7 @@ PXD014739, PXD046034 and an ontogeny series). The **Paper & Design** tab shows
 curated publication metadata for these PRIDE accessions when the experiment name
 or path contains the accession.
 
-New experiments can also be uploaded directly via the web interface (Replace or New mode).
+New experiments can also be uploaded directly via the web interface (Replace or New mode). Uploads accept TSV, CSV, `.xlsx` and EpiProfile's tab-separated `.xls`.
 
 ---
 
@@ -160,7 +162,7 @@ EpiProfile-Plants generates `.xls` files that are actually **tab-separated** (TS
 |------|---------|
 | `histone_ratios.xls` | Three blocks: Ratios, Areas, RT (separated by unnamed columns) |
 | `histone_ratios_single_PTMs.xls` | 45 individual PTM marks |
-| `phenodata_arabidopsis_project.tsv` | Sample metadata (Sample, Group, Design) |
+| `phenodata*.tsv` | Sample metadata (`Sample_Name`, `Sample_Group`, optional `Tissue`, `Design`, `Batch`). Aliases `Sample`/`Group`/`Condition` are accepted. |
 | `histone_layouts/` | Per-sample PDFs, detail files, PSMs |
 
 ---

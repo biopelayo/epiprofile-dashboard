@@ -94,3 +94,41 @@ def test_ndebug_compare_runs(dash_mod):
 def test_statistics_tab_callback(dash_mod):
     out = dash_mod._stats_filtered("ratios", "All", "All", "all", "all", False, "Demo ndebug_0")
     assert "Traceback" not in str(out)
+
+
+def test_read_table_auto_formats(dash_mod, tmp_path):
+    import pandas as pd
+    df = pd.DataFrame({"PTM": ["H3K4me1", "H3K9ac"], "1,S1": [0.1, 0.2], "2,S2": [0.3, 0.4]})
+    (tmp_path / "a.tsv").write_text(df.to_csv(sep="\t", index=False))
+    (tmp_path / "b.csv").write_text(df.to_csv(index=False))
+    (tmp_path / "c.xls").write_text(df.to_csv(sep="\t", index=False))  # EpiProfile-style TSV named .xls
+    df.to_excel(tmp_path / "d.xlsx", index=False)
+    for fn in ["a.tsv", "b.csv", "c.xls", "d.xlsx"]:
+        out = dash_mod.read_table_auto(str(tmp_path / fn))
+        assert list(out.columns) == ["PTM", "1,S1", "2,S2"], fn
+        assert out.shape == (2, 3), fn
+    # bytes payload as produced by dcc.Upload
+    raw = (tmp_path / "b.csv").read_bytes()
+    assert dash_mod.read_table_auto(raw, "b.csv").shape == (2, 3)
+    assert dash_mod.read_table_auto((tmp_path / "d.xlsx").read_bytes(), "d.xlsx").shape == (2, 3)
+
+
+def test_normalize_phenodata_aliases(dash_mod):
+    import pandas as pd
+    df = pd.DataFrame({"Sample": ["A"], "Condition": ["WT"], "Tissue": ["Leaf"]})
+    out = dash_mod.normalize_phenodata(df)
+    assert list(out.columns) == ["Sample_Name", "Sample_Group", "Tissue"]
+    # already-correct names are left untouched
+    df2 = pd.DataFrame({"Sample_Name": ["A"], "Sample_Group": ["WT"], "Group": ["x"]})
+    assert list(dash_mod.normalize_phenodata(df2).columns) == ["Sample_Name", "Sample_Group", "Group"]
+
+
+def test_xlsx_export(dash_mod):
+    import base64, io
+    import pandas as pd
+    data, status = dash_mod._exp_download(1, "hptm", "xlsx", "All", [], "all", "none", ["meta"], "Demo ndebug_0")
+    assert data and data.get("filename", "").endswith(".xlsx")
+    content = base64.b64decode(data["content"])
+    book = pd.read_excel(io.BytesIO(content), sheet_name=None)
+    assert "data" in book and "metadata" in book
+    assert book["data"].shape[0] == 26
