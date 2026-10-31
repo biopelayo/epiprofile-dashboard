@@ -60,9 +60,9 @@ Our dashboard addresses this by offering **MS1 area-based analysis** as an alter
 
 ### 2.2 Design Principles
 
-- **Single-file architecture**: The entire application (~3,700 lines) is contained in one Python file for maximum portability. No build tools, no configuration files, no database servers.
+- **Small-footprint architecture**: the Dash layout and callbacks live in one file; statistics (`ep_stats.py`), readers/exporters (`ep_io.py`), tool runners (`ep_tools.py`) and the HTML report (`ep_report.py`) are plain modules next to it. No build tools, no database servers.
 - **Stateless computation**: All analysis is computed on-the-fly from in-memory DataFrames. No intermediate files or caching layers.
-- **Zero configuration**: Default experiment paths are built-in; simply run `python epiprofile_dashboard.py`.
+- **Zero configuration to start**: `python epiprofile_dashboard.py` loads a bundled demo dataset; real experiments are declared in a small JSON file (`experiments.json`) or passed on the command line.
 - **Publication quality**: Every plot uses consistent styling, proper axis labels, and exportable vector graphics (SVG via Plotly).
 
 ### 2.3 Data Flow
@@ -86,7 +86,7 @@ EpiProfile-Plants Output
     - hptm, hpf, areas, areas_log2, areas_norm, rt, metadata
         |
         v
-    12 Analysis Tabs (Dash callbacks)
+    17 Analysis Tabs (Dash callbacks)
         |
         v
     Interactive Plots + Statistical Tables + Export

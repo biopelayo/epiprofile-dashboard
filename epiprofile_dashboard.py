@@ -1,5 +1,5 @@
 """
-EpiProfile-Plants Dashboard v3.13 -- Publication-Quality Visualization
+EpiProfile-Plants Dashboard v3.15 -- Publication-Quality Visualization
 =====================================================================
 Interactive Dash/Plotly dashboard for EpiProfile-Plants output.
 
@@ -14,8 +14,9 @@ Features: SQLite analysis tracking, biclustering, data export, adaptive sizing,
           areas normalization (log2+QN), R-ready export bundles.
 
 Usage:
-  python epiprofile_dashboard.py <dir1> [dir2] ...
-  python epiprofile_dashboard.py                    # uses DEFAULTS
+  python epiprofile_dashboard.py <dir1> [NAME=dir2] ...
+  python epiprofile_dashboard.py --config experiments.json
+  python epiprofile_dashboard.py                    # experiments.json, else bundled demo
 Access:  http://localhost:8050
 """
 
@@ -38,6 +39,9 @@ from sklearn.cluster import SpectralBiclustering, KMeans
 from statsmodels.stats.multitest import multipletests
 from dash import Dash, html, dcc, callback, Input, Output, State, dash_table, ctx, no_update
 import dash
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ep_stats, ep_io, ep_tools, ep_report
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -255,45 +259,51 @@ ICONS = {
 # CONFIGURATION
 # ======================================================================
 
-DEFAULTS = {
-    "PXD046788 ndebug_0": {
-        "dir": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
-        "ratios": "histone_ratios.xls",
-        "ndebug": "ndebug_0", "dataset": "PXD046788",
-    },
-    "PXD046788 ndebug_2": {
-        "dir": r"D:\epiprofile_data\PXD046788\MS1_MS2\RawData",
-        "ratios": "histone_ratios_ndebug2.xls",
-        "ndebug": "ndebug_2", "dataset": "PXD046788",
-    },
-    "PXD014739 ndebug_0": {
-        "dir": r"D:\epiprofile_data\PXD014739\RawData",
-        "ratios": "histone_ratios_ndebug0.xls",
-        "ndebug": "ndebug_0", "dataset": "PXD014739",
-    },
-    "PXD014739 ndebug_2": {
-        "dir": r"D:\epiprofile_data\PXD014739\RawData",
-        "ratios": "histone_ratios_ndeg2.xls",
-        "singleptm_dir": "PXD014738_ndebug2_histone_layouts",
-        "ndebug": "ndebug_2", "dataset": "PXD014739",
-    },
-    "PXD046034": {
-        "dir": r"D:\epiprofile_data\PXD046034\MS1_MS2",
-        "phenodata": r"E:\EpiProfile_AT_PXD046034_raw\PXD046034\PXD046034\analysis_PXD046034\analysis\post_epiprofile\phenodata_PXD046034.tsv",
-        "ndebug": "default", "dataset": "PXD046034",
-    },
-    "Ontogeny ndebug_0": {
-        "dir": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\RawData",
-        "ratios": "histone_ratios_ndebug0_ontogenia.xls",
-        "singleptm_dir": "histone_layouts_ndebug_0",
-        "ndebug": "ndebug_0", "dataset": "Ontogeny",
-    },
-    "Ontogeny ndebug_2": {
-        "dir": r"E:\EpiProfile_Proyecto\EpiProfile_20_AT\RawData",
-        "ratios": "histone_ratios.xls",
-        "ndebug": "ndebug_2", "dataset": "Ontogeny",
-    },
-}
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEMO_DIR = os.path.join(SCRIPT_DIR, "examples", "demo_experiment")
+
+# Experiments are configured in a JSON file (see experiments.example.json):
+#   { "Experiment name": { "dir": "...", "ratios": "histone_ratios.xls",
+#                          "singleptm_dir": "...", "phenodata": "...",
+#                          "ndebug": "ndebug_0", "dataset": "PXD046788" } }
+# Lookup order: --config PATH, $EPIPROFILE_CONFIG, ./experiments.json next to
+# this script. Relative "dir"/"phenodata" paths are resolved against the
+# directory that holds the config file. Only "dir" is required.
+def load_config_file(path):
+    """Load an experiments JSON config. Returns {} if path is None/missing."""
+    if not path or not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as fh:
+        raw = json.load(fh)
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: top level must be an object mapping names to experiments")
+    base = os.path.dirname(os.path.abspath(path))
+    cfg = {}
+    for name, entry in raw.items():
+        if isinstance(entry, str):
+            entry = {"dir": entry}
+        if not isinstance(entry, dict) or "dir" not in entry:
+            print(f"WARN config: skipping '{name}' (needs a 'dir' field)"); continue
+        e = dict(entry)
+        e["dir"] = os.path.normpath(os.path.join(base, os.path.expanduser(e["dir"])))
+        if e.get("phenodata"):
+            e["phenodata"] = os.path.normpath(os.path.join(base, os.path.expanduser(e["phenodata"])))
+        cfg[name] = e
+    return cfg
+
+def infer_exp_meta(name, path="", ratios_file=None):
+    """Infer (ndebug, dataset) from an experiment name, directory and ratios filename.
+    'ndebug_0' / 'ndebug2' / 'ndeg2' style tokens map to 'ndebug_N'; a PXD accession
+    becomes the dataset id, otherwise the name without the ndebug token is used."""
+    hay = " ".join(x for x in [name, path or "", ratios_file or ""] if x)
+    m = re.search(r"nde(?:bu)?g[_\- ]?(\d)", hay, flags=re.I)
+    ndebug = f"ndebug_{m.group(1)}" if m else "default"
+    m2 = re.search(r"(PXD\d{6})", hay, flags=re.I)
+    if m2:
+        dataset = m2.group(1).upper()
+    else:
+        dataset = re.sub(r"[\s_\-]*nde(?:bu)?g[_\- ]?\d", "", name, flags=re.I).strip(" _-") or name
+    return ndebug, dataset
 
 # ---------- Experiment metadata (PXD info, paper summaries) ----------
 EXP_INFO = {
@@ -593,22 +603,59 @@ def _get_paper_info(exp_name):
             return PAPER_INFO[key]
     return None
 
-parser = argparse.ArgumentParser(description="EpiProfile-Plants Dashboard v3.13")
-parser.add_argument("dirs", nargs="*", help="EpiProfile output directories")
-parser.add_argument("--port", type=int, default=8050)
-parser.add_argument("--host", default="0.0.0.0")
+parser = argparse.ArgumentParser(
+    description="EpiProfile-Plants Dashboard v3.15",
+    epilog="Experiment directories may be given as PATH or NAME=PATH. With no "
+           "directories, experiments are read from --config / $EPIPROFILE_CONFIG / "
+           "experiments.json; with no config either, the bundled demo dataset is loaded.")
+parser.add_argument("dirs", nargs="*", help="EpiProfile output directories (PATH or NAME=PATH)")
+parser.add_argument("--config", default=os.environ.get("EPIPROFILE_CONFIG"),
+                    help="JSON experiments config (default: $EPIPROFILE_CONFIG or ./experiments.json)")
+parser.add_argument("--port", type=int, default=int(os.environ.get("EPIPROFILE_PORT", 8050)))
+parser.add_argument("--host", default=os.environ.get("EPIPROFILE_HOST", "127.0.0.1"))
+parser.add_argument("--no-demo", action="store_true",
+                    help="Do not fall back to the bundled demo dataset when nothing is configured")
 args, _ = parser.parse_known_args()
 
-if args.dirs:
-    # CLI mode: simple name->path mapping (no ndebug metadata)
-    EXPERIMENTS = {}
-    for p in args.dirs:
-        p = os.path.abspath(p)
-        EXPERIMENTS[os.path.basename(p) or p] = {"dir": p, "ndebug": "default", "dataset": os.path.basename(p)}
-else:
-    EXPERIMENTS = {k: v for k, v in DEFAULTS.items() if os.path.isdir(v.get("dir", ""))}
-    if not EXPERIMENTS:
-        print("ERROR: No valid experiment directories."); sys.exit(1)
+def build_experiments(dirs, config_path, allow_demo=True):
+    """Resolve the EXPERIMENTS mapping from CLI dirs, a config file, or the demo."""
+    exps = {}
+    if dirs:
+        for spec in dirs:
+            name, _, p = spec.rpartition("=") if "=" in spec and not os.path.isdir(spec) else ("", "", spec)
+            p = os.path.abspath(os.path.expanduser(p))
+            if not os.path.isdir(p):
+                print(f"WARN: not a directory, skipping: {p}"); continue
+            name = name or os.path.basename(p.rstrip(os.sep)) or p
+            if name in exps:
+                name = f"{name} ({len(exps)+1})"
+            nd, ds = infer_exp_meta(name, p)
+            exps[name] = {"dir": p, "ndebug": nd, "dataset": ds}
+        return exps, "cli"
+    cfg_path = config_path or os.path.join(SCRIPT_DIR, "experiments.json")
+    cfg = load_config_file(cfg_path)
+    if config_path and not cfg:
+        print(f"ERROR: config file not found or empty: {config_path}"); sys.exit(1)
+    for name, e in cfg.items():
+        if not os.path.isdir(e["dir"]):
+            print(f"WARN: '{name}' directory missing, skipping: {e['dir']}"); continue
+        nd, ds = infer_exp_meta(name, e["dir"], e.get("ratios"))
+        e.setdefault("ndebug", nd); e.setdefault("dataset", ds)
+        exps[name] = e
+    if exps:
+        return exps, cfg_path
+    if allow_demo and os.path.isdir(DEMO_DIR):
+        print("No experiments configured; loading bundled demo dataset (examples/demo_experiment).")
+        print("  Create experiments.json (see experiments.example.json) or pass directories on the command line.")
+        return {"Demo experiment": {"dir": DEMO_DIR, "ndebug": "default", "dataset": "Demo"}}, "demo"
+    return {}, None
+
+EXPERIMENTS, EXPERIMENTS_SOURCE = build_experiments(args.dirs, args.config, allow_demo=not args.no_demo)
+if not EXPERIMENTS:
+    print("ERROR: No valid experiment directories.")
+    print("  Pass one or more EpiProfile output directories, or create experiments.json")
+    print("  (see experiments.example.json), or set EPIPROFILE_CONFIG.")
+    sys.exit(1)
 
 # ======================================================================
 # DESIGN SYSTEM
@@ -681,6 +728,59 @@ TDC = [{"if":{"state":"active"},"backgroundColor":"#eef2ff","border":f"1px solid
 # ======================================================================
 # DATA LOADERS
 # ======================================================================
+
+def read_table_auto(path_or_buf, filename="", **kw):
+    """Read a tabular file as TSV / CSV / Excel, picking the parser from the
+    extension and, for text, from a delimiter sniff of the first line.
+    EpiProfile's .xls files are really tab-separated text, so .xls is tried as
+    text first and only falls back to a real Excel reader if that fails."""
+    name = (filename or (path_or_buf if isinstance(path_or_buf, str) else "")).lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        if isinstance(path_or_buf, (bytes, bytearray)):
+            path_or_buf = BytesIO(bytes(path_or_buf))
+        return pd.read_excel(path_or_buf, **kw)
+    if isinstance(path_or_buf, (bytes, bytearray)):
+        try:
+            text = path_or_buf.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                text = path_or_buf.decode("latin-1")
+            except Exception:
+                text = None
+        if text is None or (name.endswith(".xls") and text[:2] == "\xd0\xcf"):
+            return pd.read_excel(BytesIO(bytes(path_or_buf)), **kw)
+        path_or_buf = StringIO(text)
+    if hasattr(path_or_buf, "read"):
+        head = path_or_buf.readline(); path_or_buf.seek(0)
+    else:
+        with open(path_or_buf, "r", errors="replace") as fh:
+            head = fh.readline()
+    if "\t" in head: sep = "\t"
+    elif name.endswith(".csv") or head.count(",") > head.count(";"): sep = ","
+    elif ";" in head: sep = ";"
+    else: sep = "\t"
+    return pd.read_csv(path_or_buf, sep=sep, **kw)
+
+def decode_upload(content, filename=""):
+    """Decode a dcc.Upload payload into a DataFrame via read_table_auto."""
+    _, content_string = content.split(",", 1)
+    return read_table_auto(base64.b64decode(content_string), filename)
+
+PHENO_ALIASES = {"sample": "Sample_Name", "sample_name": "Sample_Name", "samplename": "Sample_Name",
+                 "name": "Sample_Name", "group": "Sample_Group", "sample_group": "Sample_Group",
+                 "condition": "Sample_Group", "treatment": "Sample_Group"}
+
+def normalize_phenodata(df):
+    """Map common column aliases (Sample, Group, Condition...) onto the
+    Sample_Name / Sample_Group names the dashboard expects."""
+    ren = {}
+    have = set(df.columns)
+    for c in df.columns:
+        key = str(c).strip().lower()
+        tgt = PHENO_ALIASES.get(key)
+        if tgt and tgt not in have and tgt not in ren.values():
+            ren[c] = tgt
+    return df.rename(columns=ren) if ren else df
 
 def try_read_tsv(path):
     return pd.read_csv(path, sep="\t")
@@ -930,7 +1030,7 @@ def load_experiment(base_dir, ratios_file=None, singleptm_dir=None, phenodata_pa
     # If explicit path provided, use it directly
     if phenodata_path and os.path.exists(phenodata_path):
         try:
-            data["phenodata"] = pd.read_csv(phenodata_path, sep="\t")
+            data["phenodata"] = normalize_phenodata(read_table_auto(phenodata_path))
             print(f"    Phenodata: loaded from explicit path")
         except Exception as pe:
             print(f"    WARN phenodata: {pe}")
@@ -941,8 +1041,8 @@ def load_experiment(base_dir, ratios_file=None, singleptm_dir=None, phenodata_pa
             fp = find_file(base_dir, fn)
             if not fp: fp = os.path.join(ld, fn) if os.path.exists(os.path.join(ld, fn)) else None
             if fp and os.path.exists(fp):
-                try: data["phenodata"] = pd.read_csv(fp, sep="\t"); break
-                except: pass
+                try: data["phenodata"] = normalize_phenodata(read_table_auto(fp)); break
+                except Exception: pass
 
     # -- metadata --
     ref = data.get("hptm", data.get("hpf"))
@@ -963,6 +1063,11 @@ def load_experiment(base_dir, ratios_file=None, singleptm_dir=None, phenodata_pa
 
     # -- PSM --
     data["all_psm"] = load_all_psm(ld, folders)
+    # -- per-region detail files, Dinosaur MS1 features, raw mzML --
+    data["region_details"] = ep_io.load_region_details(ld, folders)
+    data["dinosaur"] = ep_io.load_dinosaur_features(base_dir)
+    data["mzml_files"] = ep_io.find_mzml(base_dir)
+    data["ms_files"] = ep_io.find_ms_files(base_dir)
 
     # -- description --
     data["description"] = build_desc(data)
@@ -1082,7 +1187,7 @@ def load_all_psm(ld, folders):
         if os.path.exists(fp):
             try:
                 df = pd.read_csv(fp, sep="\t"); df["_sample_folder"] = f; rows.append(df)
-            except: pass
+            except Exception: pass
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
@@ -1116,8 +1221,11 @@ def robust_group_test(df, meta, groups, is_log=False):
                 kw_stat, kw_p = kruskal(*arrays)
             else:
                 kw_stat, kw_p = np.nan, np.nan
-        except:
+        except Exception:
             kw_stat, kw_p = np.nan, np.nan
+
+        n_all = int(sum(len(v) for v in group_vals.values()))
+        eps2 = ep_stats.epsilon_squared(kw_stat, n_all, len(group_vals))
 
         # Means and medians
         all_means = {g: np.mean(v) for g, v in group_vals.items()}
@@ -1125,7 +1233,7 @@ def robust_group_test(df, meta, groups, is_log=False):
 
         results.append({
             "PTM": ptm,
-            "KW_stat": kw_stat, "KW_pval": kw_p,
+            "KW_stat": kw_stat, "KW_pval": kw_p, "KW_eps2": eps2,
             "n_groups": len(group_vals),
             **{f"mean_{g}": all_means.get(g, np.nan) for g in groups},
             **{f"median_{g}": all_medians.get(g, np.nan) for g in groups},
@@ -1170,7 +1278,7 @@ def pairwise_mw(df, meta, g1, g2, is_log=False):
                 results.append({"PTM":ptm,"U_stat":stat,"pval":p,"log2FC":fc,
                                 "mean_A":np.mean(va),"mean_B":np.mean(vb),
                                 "median_A":np.median(va),"median_B":np.median(vb)})
-            except: pass
+            except Exception: pass
     if not results: return pd.DataFrame()
     rdf = pd.DataFrame(results)
     if len(rdf) > 1:
@@ -1235,6 +1343,21 @@ def _get_data_source(d, source):
         return d.get("areas_log2")
     return d.get(source, d.get("hptm", d.get("hpf")))
 
+
+# ---------- Result cache (keyed on experiment + callback arguments) ----------
+_CACHE = {}
+_CACHE_MAX = 64
+
+def _cached(kind, key, fn):
+    """Memoise expensive tab content. Cleared whenever an upload changes data."""
+    k = (kind,) + tuple(key)
+    if k in _CACHE:
+        return _CACHE[k]
+    val = fn()
+    if len(_CACHE) >= _CACHE_MAX:
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[k] = val
+    return val
 
 # ======================================================================
 # LOAD ALL EXPERIMENTS
@@ -1362,7 +1485,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                  "flexWrap":"wrap"}, children=[
                     html.Span("Histone PTM Quantification Dashboard", style={"color":"#94a3b8",
                               "fontSize":"14px","fontWeight":"400","letterSpacing":"0.5px"}),
-                    html.Span("v3.13", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
+                    html.Span("v3.15", style={"background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                               "padding":"3px 14px","borderRadius":"14px","fontSize":"11px","fontWeight":"700",
                               "color":"#0f1f13","boxShadow":"0 0 12px rgba(34,197,94,0.5)"}),
                 ]),
@@ -1424,7 +1547,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
             html.Span([_svg_icon("folder", 13, {"filter":"brightness(2)"}), f" {len(EXP_DATA)} Experiments"],
                       style={"color":"#86efac","fontSize":"12px","fontWeight":"600","display":"inline-flex","alignItems":"center","gap":"4px"}),
             html.Span(chr(8226), style={"color":"#374151","fontSize":"7px"}),
-            html.Span([_svg_icon("dashboard", 13, {"filter":"brightness(1.5)"}), " 15 Analysis Tabs"],
+            html.Span([_svg_icon("dashboard", 13, {"filter":"brightness(1.5)"}), " 17 Analysis Tabs"],
                       style={"color":"#9ca3af","fontSize":"12px","fontWeight":"500","display":"inline-flex","alignItems":"center","gap":"4px"}),
             html.Span(chr(8226), style={"color":"#374151","fontSize":"7px"}),
             html.Span([_svg_icon("bar_chart", 13, {"filter":"brightness(1.5)"}), " KW + MW + FDR"],
@@ -1538,12 +1661,15 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                 dcc.Tab(label="COMPARISON", disabled=True, style=_sec_s, disabled_style=_sec_s),
                 dcc.Tab(label=_tab_lbl("balance", "Comparisons"), value="tab-cmp", style=ts, selected_style=tss),
                 dcc.Tab(label=_tab_lbl("spectra_compare", "ndebug Compare"), value="tab-ndebug", style=ts, selected_style=tss),
+                dcc.Tab(label=_tab_lbl("nodes", "Cross-Experiment"), value="tab-cross", style=ts, selected_style=tss),
                 # -- METADATA --
                 dcc.Tab(label="METADATA", disabled=True, style=_sec_s, disabled_style=_sec_s),
                 dcc.Tab(label=_tab_lbl("table", "Phenodata"), value="tab-pheno", style=ts, selected_style=tss),
                 dcc.Tab(label=_tab_lbl("search", "Sample Browser"), value="tab-browse", style=ts, selected_style=tss),
                 dcc.Tab(label=_tab_lbl("paper", "Paper & Design"), value="tab-paper", style=ts, selected_style=tss_teal),
                 # -- EXPORT --
+                dcc.Tab(label="TOOLS", disabled=True, style=_sec_s, disabled_style=_sec_s),
+                dcc.Tab(label=_tab_lbl("gear", "Tools & Report"), value="tab-tools", style=ts, selected_style=tss),
                 dcc.Tab(label="EXPORT", disabled=True, style=_sec_s, disabled_style=_sec_s),
                 dcc.Tab(label=_tab_lbl("r_logo", "Export to R"), value="tab-export", style=ts, selected_style=tss),
                 dcc.Tab(label=_tab_lbl("log", "Analysis Log"), value="tab-log", style=ts, selected_style=tss),
@@ -1575,7 +1701,7 @@ app.layout = html.Div(style={"backgroundColor":C["bg"],"minHeight":"100vh","font
                                  "flexWrap":"wrap","marginBottom":"8px"}, children=[
                     html.Span("EpiProfile-Plants", style={"fontWeight":"800","fontSize":"16px","color":"#fff",
                                "letterSpacing":"-0.5px"}),
-                    html.Span("v3.13", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
+                    html.Span("v3.15", style={"fontWeight":"700","fontSize":"11px","color":"#0f1f13",
                                "background":"linear-gradient(135deg, #22c55e 0%, #10b981 100%)",
                                "padding":"3px 12px","borderRadius":"10px",
                                "boxShadow":"0 0 8px rgba(34,197,94,0.4)"}),
@@ -1731,9 +1857,7 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
 
     if pheno_content:
         try:
-            _, content_string = pheno_content.split(",")
-            decoded = base64.b64decode(content_string).decode("utf-8")
-            pheno_df = pd.read_csv(StringIO(decoded), sep="\t")
+            pheno_df = normalize_phenodata(decode_upload(pheno_content, pheno_name))
             # Validate required columns
             missing = [c for c in ["Sample_Name","Sample_Group"] if c not in pheno_df.columns]
             if missing:
@@ -1758,9 +1882,7 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
 
     if ratios_content:
         try:
-            _, content_string = ratios_content.split(",")
-            decoded = base64.b64decode(content_string).decode("utf-8")
-            raw = pd.read_csv(StringIO(decoded), sep="\t")
+            raw = decode_upload(ratios_content, ratios_name)
             parsed = parse_ratios_hierarchy(raw)
             d["hpf"] = parsed["hpf_df"]
             d["hpf_meta"] = parsed["hpf_meta"]
@@ -1796,9 +1918,9 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
 
     if sptm_content:
         try:
-            _, content_string = sptm_content.split(",")
-            decoded = base64.b64decode(content_string).decode("utf-8")
-            sptm_df = pd.read_csv(StringIO(decoded), sep="\t", index_col=0)
+            sptm_df = decode_upload(sptm_content, sptm_name)
+            sptm_df = sptm_df.set_index(sptm_df.columns[0])
+            sptm_df.columns = [c.split(",",1)[1] if "," in str(c) else str(c) for c in sptm_df.columns]
             sptm_df = sptm_df.apply(pd.to_numeric, errors="coerce")
             d["hptm"] = sptm_df
             d["description"] = build_desc(d)
@@ -1815,6 +1937,8 @@ def _upload(pheno_content, ratios_content, sptm_content, pheno_name, ratios_name
         results.insert(0, html.Span(f"NEW EXPERIMENT '{exp}' created! ",
                        style={"color":"#fbbf24","fontWeight":"700","fontSize":"14px"}))
 
+    if results:
+        _CACHE.clear()
     return (html.Div(results) if results else "", cur_opts, cur_val)
 
 @callback(Output("tab-out","children"), Input("tabs","value"), Input("cur-exp","data"), Input("cur-palette","data"))
@@ -1828,6 +1952,8 @@ def _rt(tab, exp, pal):
         if tab == "tab-ndebug": return tab_ndebug(exp)
         if tab == "tab-k79": return tab_k79(d, exp)
         if tab == "tab-paper": return tab_paper(d, exp)
+        if tab == "tab-cross": return tab_cross(exp)
+        if tab == "tab-tools": return tab_tools(d, exp)
         return {"tab-hpf":tab_hpf,"tab-hptm":tab_hptm,"tab-qc":tab_qc,
                 "tab-pca":tab_pca,"tab-stats":tab_stats,"tab-upset":tab_upset,
                 "tab-region":tab_region,"tab-cmp":tab_cmp,"tab-pheno":tab_pheno,
@@ -1947,7 +2073,7 @@ def cluster_order(df, axis=0):
         data = df.fillna(0).values if axis==0 else df.fillna(0).values.T
         if data.shape[0] < 3: return list(df.index) if axis==0 else list(df.columns)
         return [list(df.index if axis==0 else df.columns)[i] for i in leaves_list(linkage(pdist(data),method="ward"))]
-    except: return list(df.index) if axis==0 else list(df.columns)
+    except Exception: return list(df.index) if axis==0 else list(df.columns)
 
 def _sc(label, val, color):
     return html.Div(style={**CS,"flex":"1","minWidth":"145px","textAlign":"center","padding":"20px 14px"}, children=[
@@ -2364,6 +2490,8 @@ def tab_qc(d):
             _st("Area Normalization", "Before vs After Quantile Normalization | log2(MS1 intensity)", icon="normalize"),
             html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=area_children),
         ]))
+    children.extend(_qc_evidence_sections(d))
+
     return html.Div(children)
 
 
@@ -2389,9 +2517,11 @@ def tab_pca(d):
 
 
 @callback(Output("pca-out","children"),
-          Input("pca-source","value"), Input("cur-exp","data"), Input("cur-palette","data"),
-          prevent_initial_call=True)
+          Input("pca-source","value"), Input("cur-exp","data"), Input("cur-palette","data"))
 def _pca_content(source, exp, pal):
+    return _cached("pca", (source, exp, pal), lambda: _pca_content_impl(source, exp, pal))
+
+def _pca_content_impl(source, exp, pal):
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
     df = _get_data_source(d, source)
@@ -2536,7 +2666,7 @@ def _pca_content(source, exp, pal):
             yaxis_title="Euclidean Distance (Ward)",
             title=dict(text="Hierarchical Clustering (Ward Linkage)", font=dict(size=16)),
             margin=dict(b=130))
-    except: dfig = go.Figure(); pfig(dfig, 380)
+    except Exception: dfig = go.Figure(); pfig(dfig, 380)
 
     # ---- 6. PAM (k-Medoids) CLUSTERING ----
     try:
@@ -2593,7 +2723,7 @@ def _pca_content(source, exp, pal):
         pam_fig.update_layout(
             xaxis_title=f"PC1 ({ev[0]:.1f}%)", yaxis_title=f"PC2 ({ev[1]:.1f}%)",
             title=dict(text=f"K-Means Clusters on PCA Space (K={best_k})", font=dict(size=16)))
-    except:
+    except Exception:
         sil_fig = go.Figure(); pfig(sil_fig, 300)
         sk_fig = go.Figure(); pfig(sk_fig, 300)
         pam_fig = go.Figure(); pfig(pam_fig, 350)
@@ -2619,7 +2749,7 @@ def _pca_content(source, exp, pal):
                        tickfont=dict(size=adaptive_font(n_feats))),
             xaxis_title="Distance (Ward)", title=dict(text="Feature Dendrogram", font=dict(size=16)),
             margin=dict(l=adaptive_margin_l(feat_dr["ivl"])))
-    except: feat_dfig = go.Figure(); pfig(feat_dfig, 350)
+    except Exception: feat_dfig = go.Figure(); pfig(feat_dfig, 350)
 
     k_vals = min(6, max(2, n_feats // 5))
     try:
@@ -2636,7 +2766,7 @@ def _pca_content(source, exp, pal):
                      [f"Cluster {i}" for i in cluster_means.index],
                      cs="Greens", title=f"Feature Clusters (K={k_vals}) x Group Means",
                      h=max(250, k_vals * 50))
-    except: km_hm = go.Figure(); pfig(km_hm, 300)
+    except Exception: km_hm = go.Figure(); pfig(km_hm, 300)
 
     # ---- 9. BICLUSTERING ----
     try:
@@ -2822,8 +2952,12 @@ def tab_stats(d):
           Input("stats-source","value"), Input("stats-design","value"), Input("stats-tissue","value"),
           Input("stats-show","value"),
           Input("stats-classify","value"), Input("stats-fdr","value"),
-          Input("cur-exp","data"), prevent_initial_call=True)
+          Input("cur-exp","data"))
 def _stats_filtered(source, design, tissue, show, classify, fdr_log, exp):
+    return _cached("stats", (source, design, tissue, show, classify, fdr_log, exp),
+                   lambda: _stats_filtered_impl(source, design, tissue, show, classify, fdr_log, exp))
+
+def _stats_filtered_impl(source, design, tissue, show, classify, fdr_log, exp):
     t0 = time.time()
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
@@ -3149,7 +3283,7 @@ def tab_upset(d):
                     # Fisher exact test (two-sided)
                     try:
                         _, pval = fisher_exact([[a, b], [c, dd]])
-                    except:
+                    except Exception:
                         pval = 1.0
                     pval_mat[i, j] = pval_mat[j, i] = pval
 
@@ -3165,7 +3299,7 @@ def tab_upset(d):
                 pvals = [r["Fisher_p"] for r in pair_results]
                 try:
                     _, fdr_vals, _, _ = multipletests(pvals, method="fdr_bh")
-                except:
+                except Exception:
                     fdr_vals = pvals
                 for r, fdr in zip(pair_results, fdr_vals):
                     r["FDR"] = round(fdr, 6)
@@ -3179,7 +3313,7 @@ def tab_upset(d):
                 order = leaves_list(link)
                 ptm_ordered = [ptm_names_f[i] for i in order]
                 log_or_ordered = log_or[order][:, order]
-            except:
+            except Exception:
                 ptm_ordered = ptm_names_f
                 log_or_ordered = log_or
 
@@ -3852,6 +3986,8 @@ def tab_region(d):
         make_table(table_df, "region-table"),
     ]))
 
+    children.extend(_region_detail_sections(d))
+
     return html.Div(children)
 
 
@@ -4125,7 +4261,7 @@ def tab_k79(d, exp_name):
                                 total = vals.sum() if not vals.isna().all() else 0
                                 detail_rows.append({"Sample_Folder": fld, "Modification": mod_name,
                                                     "Block": "area", "Total": total})
-                    except:
+                    except Exception:
                         pass
                     break
         if detail_rows:
@@ -4269,8 +4405,7 @@ def tab_ndebug(current_exp):
 
 @callback(Output("ndebug-out", "children"),
           Input("ndebug-a", "value"), Input("ndebug-b", "value"),
-          Input("ndebug-level", "value"), Input("cur-palette", "data"),
-          prevent_initial_call=True)
+          Input("ndebug-level", "value"), Input("cur-palette", "data"))
 def _ndebug_compare(exp_a, exp_b, level, pal):
     if not exp_a or not exp_b or exp_a not in EXP_DATA or exp_b not in EXP_DATA:
         return html.P("Select two experiments to compare.", style={"color": C["muted"]})
@@ -4686,6 +4821,22 @@ def tab_cmp(d):
             dcc.Slider(id="cmp-fdr", min=-3, max=-1, step=0.1, value=-1.301,
                        marks={-3:"0.001",-2:"0.01",-1.301:"0.05",-1:"0.1"},
                        tooltip={"placement":"bottom","always_visible":False})]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Test"),
+            dcc.Dropdown(id="cmp-test",
+                options=[{"label":v,"value":k} for k,v in ep_stats.TEST_METHODS.items()],
+                value="mannwhitney",clearable=False,style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Missing values"),
+            dcc.Dropdown(id="cmp-impute",
+                options=[{"label":v,"value":k} for k,v in ep_stats.IMPUTE_METHODS.items()],
+                value="none",clearable=False,style=DS)]),
+        html.Div(style={"flex":"1","minWidth":"200px"}, children=[
+            _lbl("Batch correction"),
+            dcc.Dropdown(id="cmp-batch",
+                options=[{"label":v,"value":k} for k,v in ep_stats.BATCH_METHODS.items()],
+                value="none",clearable=False,style=DS,
+                disabled=not ("Batch" in meta.columns and meta["Batch"].astype(str).nunique() > 1))]),
         html.Div(style={"flex":"0","minWidth":"100px","display":"flex","alignItems":"flex-end","gap":"6px"}, children=[
             html.Button("Export CSV", id="cmp-export", n_clicks=0,
                         style={"padding":"10px 16px","borderRadius":"8px","border":"none",
@@ -4717,10 +4868,13 @@ def tab_cmp(d):
 @callback(Output("cmp-out","children"),
           Input("cmp-a","value"),Input("cmp-b","value"),Input("cmp-level","value"),
           Input("cmp-show","value"),Input("cmp-classify","value"),Input("cmp-fdr","value"),
-          Input("cmp-tissue","value"),
+          Input("cmp-tissue","value"), Input("cmp-test","value"),
+          Input("cmp-impute","value"), Input("cmp-batch","value"),
           Input("cur-exp","data"))
-def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
+def _cmp(ga, gb, level, show, classify, fdr_log, tissue, test, impute, batch, exp):
     t0 = time.time()
+    test = test or "mannwhitney"; impute = impute or "none"; batch = batch or "none"
+    test_label = ep_stats.TEST_METHODS.get(test, test).split(" (")[0]
     if not exp or exp not in EXP_DATA: return html.P("N/A")
     d = EXP_DATA[exp]
     df = _get_data_source(d, level)
@@ -4736,7 +4890,7 @@ def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
         samps = meta["Sample"].tolist()
         cols = [c for c in df.columns if c in samps]; df = df[cols]
 
-    mw = pairwise_mw(df, meta, ga, gb, is_log=is_log)
+    mw = ep_stats.pairwise_test(df, meta, ga, gb, method=test, is_log=is_log, impute=impute, batch=batch)
     if mw.empty: return html.P("Could not compute comparison.")
 
     # Add classification columns
@@ -4773,7 +4927,7 @@ def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
         vf = px.scatter(mw, x="log2FC", y="negLog10FDR", hover_name="PTM",
                         color=cname, color_discrete_sequence=GC,
                         labels={"log2FC":f"log2(FC) {gb}/{ga}","negLog10FDR":"-log10(FDR)"},
-                        title=f"Volcano: {gb} vs {ga} | Mann-Whitney U + FDR")
+                        title=f"Volcano: {gb} vs {ga} | {test_label} + FDR")
     else:
         color_vals = ["Up" if r["Direction"]=="Up" and r["Significant"] else
                       "Down" if r["Direction"]=="Down" and r["Significant"] else "NS"
@@ -4783,7 +4937,7 @@ def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
         vf = px.scatter(mw, x="log2FC", y="negLog10FDR", hover_name="PTM",
                         color="_Color", color_discrete_map=cmap,
                         labels={"log2FC":f"log2(FC) {gb}/{ga}","negLog10FDR":"-log10(FDR)"},
-                        title=f"Volcano: {gb} vs {ga} | Mann-Whitney U + FDR")
+                        title=f"Volcano: {gb} vs {ga} | {test_label} + FDR")
     pfig(vf, 480, n_groups=2)
     vf.add_hline(y=-np.log10(fdr_thresh),line_dash="dash",line_color=C["red"],
                  annotation_text=f"FDR={fdr_thresh:.3f}")
@@ -4818,11 +4972,12 @@ def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
     pfig(maf, 400); maf.add_hline(y=0,line_color=C["muted"],line_dash="dash")
 
     dur = int((time.time()-t0)*1000)
-    log_analysis(exp, "mann_whitney", {"ga":ga,"gb":gb,"level":level,"fdr":fdr_thresh,"show":show},
-                 n_total, n_sig, f"MW: {ga} vs {gb} | {n_sig}/{n_total} sig, {n_up} up, {n_down} down", dur)
+    log_analysis(exp, test, {"ga":ga,"gb":gb,"level":level,"fdr":fdr_thresh,"show":show,"impute":impute,"batch":batch},
+                 n_total, n_sig, f"{test_label}: {ga} vs {gb} | {n_sig}/{n_total} sig, {n_up} up, {n_down} down", dur)
 
     # Table columns to display
-    tbl_cols = ["PTM","log2FC","pval","FDR","mean_A","mean_B","median_A","median_B","Histone","PTM_type","Direction"]
+    tbl_cols = ["PTM","log2FC","stat","pval","FDR","cliffs_delta","hedges_g","n_A","n_B",
+                "mean_A","mean_B","median_A","median_B","Histone","PTM_type","Direction"]
     tbl_cols = [c for c in tbl_cols if c in display_mw.columns]
 
     return html.Div([
@@ -4833,7 +4988,7 @@ def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
             _sc("Down",str(n_down),"#2563eb"),
             _sc("Showing",str(len(display_mw)),C["h3"]),
         ]),
-        html.P(f"{gb} vs {ga} | {level} | {dur}ms",
+        html.P(f"{gb} vs {ga} | {level} | {test_label} | {dur}ms",
                style={"color":C["accent"],"fontWeight":"600","fontSize":"14px","marginBottom":"12px"}),
         html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
             html.Div(style={**CS,"flex":"1","minWidth":"500px"}, children=[dcc.Graph(figure=vf)]),
@@ -4841,7 +4996,9 @@ def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
         ]),
         html.Div(style=CS, children=[dcc.Graph(figure=maf)]),
         html.Div(style=CS, children=[
-            _st("Mann-Whitney Results",f"FDR-corrected | {show} | Editable | Classified", icon="balance"),
+            _st(f"{test_label} Results",
+                f"FDR-corrected | {show} | imputation: {impute} | batch: {batch} | Cliff's delta and Hedges' g as effect sizes",
+                icon="balance"),
             make_table(display_mw[tbl_cols],"cmp-table")]),
     ])
 
@@ -4849,13 +5006,15 @@ def _cmp(ga, gb, level, show, classify, fdr_log, tissue, exp):
 @callback(Output("download-data","data", allow_duplicate=True),
           Input("cmp-export","n_clicks"),
           State("cmp-a","value"),State("cmp-b","value"),State("cmp-level","value"),
+          State("cmp-test","value"),State("cmp-impute","value"),State("cmp-batch","value"),
           State("cur-exp","data"), prevent_initial_call=True)
-def _cmp_export(n, ga, gb, level, exp):
+def _cmp_export(n, ga, gb, level, test, impute, batch, exp):
     if not n or not exp or exp not in EXP_DATA: return no_update
     d = EXP_DATA[exp]; df = _get_data_source(d, level); meta = d["metadata"]
     is_log = level in ("areas_norm", "areas_log2")
     if df is None: return no_update
-    mw = pairwise_mw(df, meta, ga, gb, is_log=is_log)
+    mw = ep_stats.pairwise_test(df, meta, ga, gb, method=test or "mannwhitney", is_log=is_log,
+                                impute=impute or "none", batch=batch or "none")
     if mw.empty: return no_update
     h_col, t_col = [], []
     for _, row in mw.iterrows():
@@ -5155,6 +5314,7 @@ def tab_export(d):
     format_opts = [
         {"label": "CSV (comma-separated)", "value": "csv"},
         {"label": "TSV (tab-separated)", "value": "tsv"},
+        {"label": "Excel workbook (.xlsx, one sheet per table)", "value": "xlsx"},
         {"label": "R Script + Data (ready-to-load .R + .csv)", "value": "r_bundle"},
     ]
 
@@ -5532,6 +5692,21 @@ def _exp_download(n, source, fmt, design, groups_sel, feat_filter, inc_stats, ad
     ts = datetime.now().strftime("%Y%m%d_%H%M")
     sep_char = "," if fmt == "csv" else "\t"
     ext = "csv" if fmt == "csv" else "tsv"
+
+    if fmt == "xlsx":
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+            sheets["data"].to_excel(xw, sheet_name="data")
+            if "statistics" in sheets: sheets["statistics"].to_excel(xw, sheet_name="statistics", index=False)
+            if "pairwise" in sheets: sheets["pairwise"].to_excel(xw, sheet_name="pairwise", index=False)
+            if add_meta and "meta" in add_meta:
+                export_samps = list(sheets["data"].columns)
+                meta[meta["Sample"].isin(export_samps)].to_excel(xw, sheet_name="metadata", index=False)
+        buf.seek(0)
+        fname = f"{exp_name}_{source}_{ts}.xlsx"
+        log_analysis(exp, "export_xlsx", {"source": source}, sheets["data"].shape[0], 0,
+                     f"XLSX export {sheets['data'].shape}", int((time.time()-t0)*1000))
+        return dcc.send_bytes(buf.getvalue(), fname), html.P(f"Exported {fname}", style={"color":C["green"]})
 
     if fmt == "r_bundle":
         # Create a ZIP with R script + CSV data files + metadata
@@ -5921,12 +6096,552 @@ def tab_paper(d, exp_name):
 
 
 # ======================================================================
+# EVIDENCE SECTIONS (QC + Region Map): PSMs, region detail files, Dinosaur
+# ======================================================================
+
+def _qc_evidence_sections(d):
+    """Extra QC panels built from per-sample evidence files when present."""
+    out = []
+    # ---- PSM identification lists ----
+    psm = d.get("all_psm", pd.DataFrame())
+    summ = ep_io.summarize_psms(psm) if psm is not None and not psm.empty else None
+    if summ and summ["n"]:
+        cards = [_sc("PSMs", f"{summ['n']:,}", C["accent"])]
+        if not summ["per_peptide"].empty:
+            cards.append(_sc("Peptide sequences", str(len(summ["per_peptide"])), C["h3"]))
+        if not summ["per_sample"].empty:
+            cards.append(_sc("Samples with PSMs", str(len(summ["per_sample"])), C["green"]))
+        graphs = []
+        if not summ["per_sample"].empty:
+            fb = px.bar(summ["per_sample"], x="sample_folder", y="n_psm", title="PSMs per sample",
+                        color_discrete_sequence=[C["accent"]])
+            pfig(fb, 320, n_x=len(summ["per_sample"])); fb.update_layout(xaxis=dict(tickangle=45))
+            graphs.append(html.Div(style={**CS,"flex":"1","minWidth":"380px"}, children=[dcc.Graph(figure=fb)]))
+        if not summ["charge"].empty:
+            fz = px.bar(x=[f"{int(z)}+" for z in summ["charge"].index], y=summ["charge"].values,
+                        title="Precursor charge states", labels={"x":"charge","y":"# PSMs"},
+                        color_discrete_sequence=[C["h3"]])
+            pfig(fz, 320)
+            graphs.append(html.Div(style={**CS,"flex":"1","minWidth":"300px"}, children=[dcc.Graph(figure=fz)]))
+        if not summ["score"].empty:
+            fs = px.histogram(x=summ["score"].values, nbins=40, title=f"Score distribution ({summ['columns'].get('score')})",
+                              labels={"x":"score"}, color_discrete_sequence=[C["warn"]])
+            pfig(fs, 320)
+            graphs.append(html.Div(style={**CS,"flex":"1","minWidth":"300px"}, children=[dcc.Graph(figure=fs)]))
+        out.append(html.Div([
+            _st("Spectral evidence (PSMs)",
+                f"identification_list.xls from {len(summ['per_sample'])} sample folders | detected columns: "
+                + ", ".join(f"{k}={v}" for k, v in summ["columns"].items()), icon="chromatogram"),
+            html.Div(style={"display":"flex","gap":"12px","marginBottom":"12px","flexWrap":"wrap"}, children=cards),
+            html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=graphs),
+        ]))
+        if not summ["per_peptide"].empty:
+            out.append(html.Div(style=CS, children=[
+                _st("PSM counts per peptide", "Spectral counts across all samples (top 200)", icon="table"),
+                make_table(summ["per_peptide"].head(200), "qc-psm-table")]))
+    # ---- Dinosaur MS1 features ----
+    feat = d.get("dinosaur", pd.DataFrame())
+    if feat is not None and not feat.empty:
+        fs = ep_io.summarize_dinosaur(feat)
+        fcount = px.bar(fs, x="sample", y="n_features", title="Dinosaur MS1 features per run",
+                        color_discrete_sequence=[C["accent"]])
+        pfig(fcount, 320, n_x=len(fs)); fcount.update_layout(xaxis=dict(tickangle=45))
+        sub = feat.sample(min(len(feat), 20000), random_state=1) if len(feat) > 20000 else feat
+        fmap = px.scatter(sub, x="rtApex", y="mz", color="charge", size_max=4, opacity=0.5,
+                          title="Feature map (RT apex vs m/z)", labels={"rtApex":"RT apex (min)","mz":"m/z"},
+                          color_continuous_scale="Viridis") if "rtApex" in sub.columns else None
+        if fmap is not None: pfig(fmap, 420); fmap.update_traces(marker=dict(size=3))
+        out.append(html.Div([
+            _st("MS1 feature detection (Dinosaur)",
+                f"{len(feat):,} isotope-pattern features from {fs['sample'].nunique()} runs | "
+                f"files: *.features.tsv found under the experiment directory", icon="normalize"),
+            html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+                html.Div(style={**CS,"flex":"1","minWidth":"380px"}, children=[dcc.Graph(figure=fcount)]),
+            ] + ([html.Div(style={**CS,"flex":"2","minWidth":"480px"}, children=[dcc.Graph(figure=fmap)])] if fmap is not None else [])),
+            html.Div(style=CS, children=[make_table(fs.round(3), "qc-dino-table")]),
+        ]))
+    # ---- region detail availability ----
+    det = d.get("region_details", pd.DataFrame())
+    if det is not None and not det.empty:
+        cov = det.groupby("region")["sample_folder"].nunique().rename("samples_with_detail").reset_index()
+        out.append(html.Div(style=CS, children=[
+            _st("Per-region detail files", f"{det['region'].nunique()} regions x {det['sample_folder'].nunique()} samples parsed "
+                "from histone_layouts/<sample>/detail/ (ratio, area and RT per charge state)", icon="region"),
+            make_table(cov, "qc-det-table")]))
+    return out
+
+
+def _region_detail_sections(d):
+    """Per-region charge-state evidence (areas, RT) from detail files, all regions."""
+    det = d.get("region_details", pd.DataFrame())
+    if det is None or det.empty:
+        return []
+    summ = ep_io.summarize_region_details(det)
+    regions = sorted(det["region"].unique())
+    out = [html.Div(style={**CS,"display":"flex","gap":"16px","alignItems":"flex-end","flexWrap":"wrap"}, children=[
+        html.Div(style={"flex":"1","minWidth":"240px"}, children=[
+            _lbl("Region detail file"),
+            dcc.Dropdown(id="region-det-sel", options=[{"label":r,"value":r} for r in regions],
+                         value=regions[0], clearable=False, style=DS)]),
+        html.Div(style={"flex":"2"}, children=[html.P(
+            "Charge-state resolved areas and retention times per sample, parsed from every "
+            "histone_layouts/<sample>/detail/<region>.xls file (generalisation of the H3K79 panel).",
+            style={"color":C["muted"],"fontSize":"12px","margin":"0"})]),
+    ]), html.Div(id="region-det-out")]
+    return out
+
+
+@callback(Output("region-det-out","children"), Input("region-det-sel","value"), Input("cur-exp","data"))
+def _region_det_content(region, exp):
+    if not exp or exp not in EXP_DATA or not region: return ""
+    d = EXP_DATA[exp]
+    det = d.get("region_details", pd.DataFrame())
+    sub = det[det["region"] == region]
+    if sub.empty: return html.P("No detail rows for this region.")
+    summ = ep_io.summarize_region_details(sub)
+    graphs = []
+    area = sub[sub["block"] == "area"]
+    if not area.empty:
+        piv = area.groupby(["modification","sample_folder"])["value"].sum().unstack("sample_folder")
+        piv = np.log2(piv.replace(0, np.nan))
+        hm = phm(piv.values, piv.columns.tolist(), piv.index.tolist(), cs="YlGnBu",
+                 title=f"{region}: log2 MS1 area (sum over charge states)", h=max(300, 28*len(piv)+120))
+        graphs.append(html.Div(style=CS, children=[dcc.Graph(figure=hm)]))
+        zs = area.groupby(["modification","column"])["value"].sum().reset_index()
+        tot = zs.groupby("modification")["value"].transform("sum")
+        zs["fraction"] = zs["value"] / tot.replace(0, np.nan)
+        fz = px.bar(zs, x="modification", y="fraction", color="column", barmode="stack",
+                    title="Charge-state contribution to area", color_discrete_sequence=GC,
+                    labels={"column":"charge/col","fraction":"fraction of area"})
+        pfig(fz, 360, n_x=zs["modification"].nunique())
+        graphs.append(html.Div(style=CS, children=[dcc.Graph(figure=fz)]))
+    rt = sub[sub["block"] == "rt"]
+    if not rt.empty:
+        frt = px.box(rt, x="modification", y="value", points="all", title="Retention time per peptidoform (min)",
+                     color_discrete_sequence=[C["accent"]], labels={"value":"RT (min)"})
+        pfig(frt, 360, n_x=rt["modification"].nunique())
+        graphs.append(html.Div(style=CS, children=[dcc.Graph(figure=frt)]))
+    tbl = summ[summ["region"] == region].round(4) if not summ.empty else pd.DataFrame()
+    if not tbl.empty:
+        graphs.append(html.Div(style=CS, children=[_st("Detail table", f"{region} | per sample and peptidoform", icon="table"),
+                                                   make_table(tbl, "region-det-table")]))
+    return html.Div(graphs)
+
+
+# ======================================================================
+# TAB: CROSS-EXPERIMENT
+# ======================================================================
+
+def tab_cross(current_exp):
+    exps = {k: v for k, v in EXP_DATA.items() if "hptm" in v and v["hptm"] is not None and not v["hptm"].empty
+            and not v.get("metadata", pd.DataFrame()).empty}
+    if len(exps) < 2:
+        return html.Div(style=CS, children=[
+            _st("Cross-Experiment comparison", "Load two or more experiments with single-PTM data to compare them.", icon="nodes"),
+            html.P(f"{len(exps)} experiment(s) currently loaded with hPTM data. Add directories on the command line, "
+                   "in experiments.json, or upload a new experiment from the header.", style={"color":C["muted"]})])
+    names = list(exps)
+    sets = {n: set(exps[n]["hptm"].index) for n in names}
+    common = sorted(set.intersection(*sets.values()))
+    union = set.union(*sets.values())
+    overlap = pd.DataFrame([{"Experiment": n, "hPTMs": len(sets[n]), "Samples": exps[n]["hptm"].shape[1],
+                             "Groups": exps[n]["metadata"]["Group"].nunique(),
+                             "Shared with all": len(common), "Unique to this": len(sets[n] - set.union(*[sets[m] for m in names if m != n]))}
+                            for n in names])
+    children = [
+        html.Div(style={"display":"flex","gap":"12px","marginBottom":"16px","flexWrap":"wrap"}, children=[
+            _sc("Experiments", str(len(names)), C["accent"]),
+            _sc("hPTMs in common", str(len(common)), C["green"]),
+            _sc("hPTMs in union", str(len(union)), C["h3"]),
+        ]),
+        html.Div(style=CS, children=[_st("Feature overlap", "Single-PTM features shared across the loaded experiments", icon="venn"),
+                                     make_table(overlap, "cross-overlap")]),
+    ]
+    if len(common) >= 2:
+        # group means per experiment, z-scored within experiment
+        cols, mats = [], []
+        for n in names:
+            df = exps[n]["hptm"].loc[common]
+            meta = exps[n]["metadata"]
+            gm = pd.DataFrame({g: df[[c for c in sub["Sample"] if c in df.columns]].mean(axis=1)
+                               for g, sub in meta.groupby("Group")})
+            z = gm.sub(gm.mean(axis=1), axis=0).div(gm.std(axis=1).replace(0, np.nan), axis=0)
+            z.columns = [f"{n} | {g}" for g in z.columns]
+            mats.append(z)
+        Z = pd.concat(mats, axis=1)
+        order = cluster_order(Z.fillna(0), axis=0)
+        Z = Z.loc[order]
+        hm = phm(Z.values, Z.columns.tolist(), Z.index.tolist(), cs="RdBu_r", zmin=-2, zmax=2,
+                 title="Group means of shared hPTMs (z-scored within each experiment)", h=max(420, 20*len(Z)+160))
+        hm.update_layout(xaxis=dict(tickangle=45))
+        children.append(html.Div(style=CS, children=[dcc.Graph(figure=hm)]))
+        # correlation of experiment-wide feature means
+        means = pd.DataFrame({n: exps[n]["hptm"].loc[common].mean(axis=1) for n in names})
+        corr = means.corr(method="spearman")
+        fc = phm(corr.values, names, names, cs="Viridis", zmin=-1, zmax=1,
+                 title="Spearman correlation of mean hPTM ratios between experiments", h=120 + 60*len(names))
+        fc.update_traces(text=np.round(corr.values, 2), texttemplate="%{text}")
+        scat = None
+        if len(names) >= 2:
+            a, b = names[0], (current_exp if current_exp in names and current_exp != names[0] else names[1])
+            sc_df = means[[a, b]].copy(); sc_df.index.name = "hPTM"; sc_df = sc_df.reset_index()
+            scat = px.scatter(sc_df, x=a, y=b, hover_name="hPTM", text="hPTM", title=f"Mean ratio: {a} vs {b}",
+                              color_discrete_sequence=[C["accent"]])
+            scat.update_traces(textposition="top center", textfont=dict(size=9)); pfig(scat, 460)
+            mx = float(np.nanmax(sc_df[[a, b]].values)) if len(sc_df) else 1
+            scat.add_shape(type="line", x0=0, y0=0, x1=mx, y1=mx, line=dict(dash="dash", color=C["muted"]))
+        children.append(html.Div(style={"display":"flex","gap":"16px","flexWrap":"wrap"}, children=[
+            html.Div(style={**CS,"flex":"1","minWidth":"360px"}, children=[dcc.Graph(figure=fc)]),
+        ] + ([html.Div(style={**CS,"flex":"1","minWidth":"420px"}, children=[dcc.Graph(figure=scat)])] if scat is not None else [])))
+    return html.Div([_st("Cross-Experiment comparison",
+                         "Shared single-PTM features across all loaded experiments | means are per group within experiment",
+                         icon="nodes")] + children)
+
+
+# ======================================================================
+# TAB: TOOLS & REPORT  (Dinosaur, spectrum viewer, PTMVision export, HTML report)
+# ======================================================================
+_DINO_JOBS = {}
+
+def _env_badge(ok, label):
+    return html.Span(label, style={"background": "#dcfce7" if ok else "#fee2e2", "color": "#166534" if ok else "#991b1b",
+                                   "padding":"4px 10px","borderRadius":"999px","fontSize":"12px","fontWeight":"600","marginRight":"8px"})
+
+def tab_tools(d, exp_name):
+    mzmls = d.get("mzml_files", []) or []
+    msfiles = d.get("ms_files", []) or []
+    feat = d.get("dinosaur", pd.DataFrame())
+    jar = ep_tools.dinosaur_jar()
+    java = ep_tools.java_available()
+    sptm_names = list(d["hptm"].index) if "hptm" in d else []
+    site_tbl = ep_io.ptm_site_table(sptm_names)
+    return html.Div([
+        _st("Tools & Report", "External tools, raw-data inspection and one-click reports for the current experiment", icon="gear"),
+        html.Div(style=CS, children=[
+            html.Div([_env_badge(bool(java), f"Java: {'found' if java else 'missing'}"),
+                      _env_badge(bool(jar), f"Dinosaur: {os.path.basename(jar) if jar else 'not installed (python ep_tools.py install)'}"),
+                      _env_badge(ep_io.have_pyteomics(), f"pyteomics: {'available' if ep_io.have_pyteomics() else 'pip install pyteomics psims'}"),
+                      _env_badge(len(mzmls) > 0, f"mzML files: {len(mzmls)}"),
+                      _env_badge(feat is not None and not feat.empty, f"Dinosaur features: {0 if feat is None else len(feat):,}")],
+                     style={"marginBottom":"10px"}),
+            html.P(f"Experiment directory: {d.get('base_dir','')}", style={"color":C["muted"],"fontSize":"12px","margin":"0"}),
+        ]),
+        # ---- Dinosaur ----
+        html.Div(style=CS, children=[
+            _st("MS1 feature detection with Dinosaur",
+                "Runs java -jar Dinosaur on every mzML under the experiment directory and writes <run>.features.tsv next to it. "
+                "Results appear in the QC Dashboard after reload.", icon="normalize"),
+            html.Div(style={"display":"flex","gap":"12px","alignItems":"flex-end","flexWrap":"wrap"}, children=[
+                html.Div(style={"flex":"2","minWidth":"300px"}, children=[
+                    _lbl("mzML files"),
+                    dcc.Dropdown(id="tools-mzml-multi", multi=True,
+                                 options=[{"label": os.path.relpath(m, d.get("base_dir", "/")), "value": m} for m in mzmls],
+                                 value=mzmls[:4], placeholder="No mzML found in experiment directory", style=DS)]),
+                html.Div(style={"flex":"0","minWidth":"140px"}, children=[
+                    _lbl("Threads"), dcc.Input(id="tools-dino-threads", type="number", min=1, max=16, value=2, style={"width":"100%"})]),
+                html.Button("Run Dinosaur", id="tools-dino-run", n_clicks=0,
+                            disabled=not (java and jar and mzmls),
+                            style={"padding":"10px 18px","borderRadius":"8px","border":"none","backgroundColor":C["accent"],
+                                   "color":"white","fontWeight":"700","cursor":"pointer"}),
+            ]),
+            dcc.Interval(id="tools-poll", interval=3000, n_intervals=0),
+            html.Pre(id="tools-dino-status", style={"fontSize":"12px","background":"#f8fafc","padding":"10px","borderRadius":"8px",
+                                                     "marginTop":"10px","maxHeight":"220px","overflow":"auto","whiteSpace":"pre-wrap"}),
+        ]),
+        # ---- Annotator: spectrum viewer + fragment annotation (mzML / ms1 / ms2) ----
+        html.Div(style=CS, children=[
+            _st("Annotator: spectrum viewer & fragment annotation",
+                "Opens mzML (pyteomics) or RawConverter .ms1/.ms2 scans, matches b/y (a/c/x/z) ladders of a ProForma "
+                "peptidoform offline, cross-checks with rustyms (the engine behind Snijder lab's Annotator) and exports "
+                "MGF for the Annotator desktop app.", icon="chromatogram"),
+            html.Div([_env_badge(ep_io.have_rustyms(), f"rustyms engine: {'available' if ep_io.have_rustyms() else 'pip install rustyms==0.9.0'}"),
+                      _env_badge(bool(ep_tools.annotator_binary()), f"Annotator app: {os.path.basename(ep_tools.annotator_binary()) if ep_tools.annotator_binary() else 'not found (tools/ or ANNOTATOR_BIN)'}"),
+                      _env_badge(len(msfiles) > 0, f"MS files: {len(msfiles)} (mzML/ms1/ms2)")], style={"marginBottom":"10px"}),
+            html.Div(style={"display":"flex","gap":"12px","alignItems":"flex-end","flexWrap":"wrap"}, children=[
+                html.Div(style={"flex":"2","minWidth":"240px"}, children=[
+                    _lbl("MS file"), dcc.Dropdown(id="tools-spec-file", options=[{"label": os.path.relpath(m, d.get("base_dir","/")), "value": m} for m in msfiles],
+                                                  value=msfiles[0] if msfiles else None, style=DS)]),
+                html.Div(style={"flex":"2","minWidth":"220px"}, children=[
+                    _lbl("Scan"), dcc.Dropdown(id="tools-spec-scan", options=[], placeholder="select file first", style=DS)]),
+                html.Div(style={"flex":"2","minWidth":"240px"}, children=[
+                    _lbl("Peptidoform (ProForma)"), dcc.Input(id="tools-spec-pep", type="text", value="KSTGGK[Acetyl]APR",
+                                                             placeholder="e.g. K[Trimethyl]STGGKAPR", style={"width":"100%"})]),
+                html.Div(style={"flex":"0","minWidth":"90px"}, children=[
+                    _lbl("Tolerance"), dcc.Input(id="tools-spec-tol", type="number", value=20, min=0.001, style={"width":"100%"})]),
+                html.Div(style={"flex":"0","minWidth":"90px"}, children=[
+                    _lbl("Unit"), dcc.Dropdown(id="tools-spec-unit", options=[{"label":"ppm","value":"ppm"},{"label":"Da","value":"Da"}], value="ppm", clearable=False, style=DS)]),
+                html.Div(style={"flex":"1","minWidth":"160px"}, children=[
+                    _lbl("Ion series"), dcc.Dropdown(id="tools-spec-ions", multi=True, value=["b","y"], clearable=False,
+                                                     options=[{"label":i,"value":i} for i in ["a","b","c","x","y","z"]], style=DS)]),
+                html.Button("Annotate", id="tools-spec-go", n_clicks=0, disabled=not msfiles,
+                            style={"padding":"10px 18px","borderRadius":"8px","border":"none","backgroundColor":C["h3"],
+                                   "color":"white","fontWeight":"700","cursor":"pointer"}),
+                html.Button("Download MGF", id="tools-spec-mgf", n_clicks=0, disabled=not msfiles,
+                            style={"padding":"10px 14px","borderRadius":"8px","border":"none","backgroundColor":"#0891b2",
+                                   "color":"white","fontWeight":"700","cursor":"pointer"}),
+                html.Button("Open in Annotator app", id="tools-spec-launch", n_clicks=0, disabled=not (msfiles and ep_tools.annotator_binary()),
+                            style={"padding":"10px 14px","borderRadius":"8px","border":"1px solid #0891b2","backgroundColor":"white",
+                                   "color":"#0891b2","fontWeight":"700","cursor":"pointer"}),
+            ]),
+            html.Div(id="tools-spec-out"),
+            html.P(["Annotator desktop app: download the release for your OS from ",
+                    html.A("github.com/snijderlab/annotator", href="https://github.com/snijderlab/annotator/releases/latest", target="_blank"),
+                    " into tools/ (or set ANNOTATOR_BIN). It opens the MGF exported here, as well as mzML, Thermo RAW and Bruker data directly."],
+                   style={"color":C["muted"],"fontSize":"12px","marginTop":"8px"}),
+        ]),
+        # ---- Exports ----
+        html.Div(style=CS, children=[
+            _st("Exports for external tools", "PTMVision site table (plain CSV) and a self-contained HTML report", icon="export"),
+            html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap"}, children=[
+                html.Button(f"PTMVision CSV ({len(site_tbl)} sites)", id="tools-ptmvision", n_clicks=0, disabled=site_tbl.empty,
+                            style={"padding":"10px 18px","borderRadius":"8px","border":"none","backgroundColor":"#0891b2",
+                                   "color":"white","fontWeight":"700","cursor":"pointer"}),
+                html.Button("HTML report", id="tools-report", n_clicks=0,
+                            style={"padding":"10px 18px","borderRadius":"8px","border":"none","backgroundColor":C["accent"],
+                                   "color":"white","fontWeight":"700","cursor":"pointer"}),
+            ]),
+            html.P("PTMVision columns: uniprot_id, position, modification_unimod_name, modification_unimod_id "
+                   "(UniProt positions include the initiator Met, histone nomenclature does not). Upload at "
+                   "https://ptmvision-tuevis.cs.uni-tuebingen.de/ . The HTML report embeds the main figures and tables and "
+                   "needs only a browser.", style={"color":C["muted"],"fontSize":"12px","marginTop":"10px"}),
+            html.Div(id="tools-export-status", style={"fontSize":"12px","color":C["green"],"marginTop":"6px"}),
+        ]),
+    ])
+
+
+@callback(Output("tools-dino-status","children"),
+          Input("tools-dino-run","n_clicks"), Input("tools-poll","n_intervals"),
+          State("tools-mzml-multi","value"), State("tools-dino-threads","value"), State("cur-exp","data"))
+def _tools_dino(n, _tick, files, threads, exp):
+    if not exp: return ""
+    job = _DINO_JOBS.get(exp)
+    if ctx.triggered_id == "tools-dino-run" and n and files:
+        if job is None or job.done:
+            job = ep_tools.DinosaurJob(files, concurrency=int(threads or 2)).start()
+            _DINO_JOBS[exp] = job
+            log_analysis(exp, "dinosaur", {"files": len(files), "threads": threads}, 0, 0, "Dinosaur started")
+    if job is None:
+        jar = ep_tools.dinosaur_jar()
+        return ("Ready. " if jar else "Dinosaur jar not installed: run `python ep_tools.py install`. ") + \
+               ("Select mzML files and press Run Dinosaur." if EXP_DATA[exp].get("mzml_files") else
+                "No mzML files found under the experiment directory (convert RAW with msconvert first).")
+    done, total = job.progress
+    head = f"Dinosaur {'finished' if job.done else 'running'}: {done}/{total} files\n"
+    if job.done and any(r.get("ok") for r in job.results):
+        d = EXP_DATA[exp]
+        d["dinosaur"] = ep_io.load_dinosaur_features(d.get("base_dir", ""))
+        _CACHE.clear()
+        head += f"Loaded {len(d['dinosaur']):,} features into the experiment (see QC Dashboard).\n"
+    return head + "\n".join(job.log[-30:])
+
+
+@callback(Output("tools-spec-scan","options"), Output("tools-spec-scan","value"), Input("tools-spec-file","value"))
+def _tools_scan_options(path):
+    if not path: return [], None
+    try:
+        scans = ep_io.list_scans(path, limit=3000)
+    except Exception as e:
+        return [{"label": f"error: {e}", "value": -1}], None
+    opts = []
+    for sc in scans:
+        lab = f"scan {sc['scan']} | MS{sc['ms_level']}"
+        if sc.get("rt") is not None: lab += f" | RT {sc['rt']:.2f}"
+        if sc.get("precursor_mz"): lab += f" | {sc['precursor_mz']:.4f} ({sc.get('charge') or '?'}+)"
+        lab += f" | {sc['n_peaks']} peaks"
+        opts.append({"label": lab, "value": sc["scan"]})
+    first_ms2 = next((o["value"] for o, sc in zip(opts, scans) if sc["ms_level"] == 2), opts[0]["value"] if opts else None)
+    return opts, first_ms2
+
+
+def _spectrum_figure(spec, matches, title):
+    mz, it = spec["mz"], spec["intensity"]
+    xs, ys = [], []
+    for a, b in zip(mz, it):
+        xs += [a, a, None]; ys += [0, b, None]
+    fig = go.Figure(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color="#9ca3af", width=1), name="peaks", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=mz, y=it, mode="markers", marker=dict(size=3, color="#9ca3af"), name="unassigned",
+                             hovertemplate="m/z %{x:.4f}<br>int %{y:.3g}<extra></extra>"))
+    if matches is not None and not matches.empty:
+        colors = {"b": "#2563eb", "y": "#dc2626", "a": "#0891b2", "c": "#7c3aed", "x": "#d97706", "z": "#059669"}
+        for ser, sub in matches.groupby("series"):
+            xs, ys = [], []
+            for a, b in zip(sub["mz"], sub["intensity"]):
+                xs += [a, a, None]; ys += [0, b, None]
+            fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=colors.get(ser, "#111"), width=2), name=f"{ser} ions", hoverinfo="skip"))
+            fig.add_trace(go.Scatter(x=sub["mz"], y=sub["intensity"], mode="markers+text", text=sub["ion"], textposition="top center",
+                                     marker=dict(size=6, color=colors.get(ser, "#111")), name=f"{ser} labels", showlegend=False,
+                                     textfont=dict(size=10, color=colors.get(ser, "#111")),
+                                     hovertemplate="%{text}<br>m/z %{x:.4f}<br>err %{customdata:.1f} ppm<extra></extra>", customdata=sub["error_ppm"]))
+    fig.update_layout(title=title, xaxis_title="m/z", yaxis_title="intensity", legend=dict(orientation="h", y=1.08))
+    pfig(fig, 480)
+    return fig
+
+
+def _coverage_strip(sequence, matches):
+    """Sequence with b (top) / y (bottom) cleavage markers as a monospace line."""
+    if not sequence: return ""
+    n = len(sequence)
+    b = set(matches[matches["series"] == "b"]["position"]) if matches is not None and not matches.empty else set()
+    y = set(matches[matches["series"] == "y"]["position"]) if matches is not None and not matches.empty else set()
+    top = "".join(("\u2510" if i in b else " ") + " " for i in range(1, n + 1))
+    mid = " ".join(sequence)
+    bot = "".join((" \u2514" if (n - i) in y else "  ") for i in range(1, n + 1))
+    return html.Pre(f"b: {top}\n   {mid}\ny: {bot}", style={"fontFamily":"monospace","fontSize":"14px","margin":"8px 0","lineHeight":"1.2"})
+
+
+@callback(Output("tools-spec-out","children"), Input("tools-spec-go","n_clicks"), Input("tools-spec-scan","value"),
+          State("tools-spec-file","value"), State("tools-spec-pep","value"),
+          State("tools-spec-tol","value"), State("tools-spec-unit","value"), State("tools-spec-ions","value"),
+          State("cur-exp","data"), prevent_initial_call=True)
+def _tools_spectrum(n, scan, path, pep, tol, unit, ions, exp):
+    if not path or scan is None or scan == -1: return ""
+    try:
+        spec = ep_io.read_spectrum_any(path, scan=int(scan))
+    except Exception as e:
+        return html.P(f"Could not read spectrum: {e}", style={"color":C["red"]})
+    if spec is None or len(spec["mz"]) == 0:
+        return html.P("Spectrum not found or empty.", style={"color":C["red"]})
+    title = f"{os.path.basename(path)} | scan {scan} | MS{spec['ms_level']}"
+    if spec.get("rt") is not None: title += f" | RT {spec['rt']:.2f} min"
+    if spec.get("precursor_mz"): title += f" | precursor {spec['precursor_mz']:.4f} ({spec.get('charge') or '?'}+)"
+    pep = (pep or "").strip()
+    res, err = None, None
+    if pep and ctx.triggered_id == "tools-spec-go":
+        try:
+            res = ep_io.annotate_peaks(spec, pep, tol=float(tol or 20), unit=unit or "ppm", ion_types=tuple(ions or ("b","y")))
+        except Exception as e:
+            err = f"Annotation error: {e}"
+    matches = res["matches"] if res else None
+    fig = _spectrum_figure(spec, matches, title)
+    children = [dcc.Graph(figure=fig)]
+    if err: children.append(html.P(err, style={"color":C["red"]}))
+    if res:
+        cov = " | ".join(f"{k}: {v*100:.0f}%" for k, v in res["coverage"].items())
+        cards = [_sc("Matched ions", str(len(matches)), C["accent"]), _sc("Theoretical", str(res["n_theoretical"]), C["muted"]),
+                 _sc("Explained intensity", f"{res['explained_intensity']*100:.1f}%", C["h3"])]
+        rx = ep_io.rustyms_annotate(spec, pep)
+        if rx and "n_matched" in rx:
+            cards.append(_sc("rustyms matched", f"{rx['n_matched']}/{rx['n_peaks']}", "#0891b2"))
+        children += [html.Div(style={"display":"flex","gap":"12px","flexWrap":"wrap","margin":"8px 0"}, children=cards),
+                     html.P(f"{pep} | {res['sequence']} | coverage {cov} | tol {tol} {unit}", style={"color":C["muted"],"fontSize":"12px"}),
+                     _coverage_strip(res["sequence"], matches)]
+        if matches is not None and not matches.empty:
+            children.append(make_table(matches[["ion","charge","mz","theo_mz","error_ppm","error_da","intensity"]].round(5), "tools-spec-table"))
+        if rx and rx.get("formulas"):
+            children.append(html.Details([html.Summary("rustyms fragment formulas", style={"cursor":"pointer","color":C["accent"],"fontSize":"12px"}),
+                                          html.Pre("\n".join(rx["formulas"]), style={"fontSize":"11px"})]))
+        log_analysis(exp or "", "annotate_spectrum", {"file": os.path.basename(path), "scan": scan, "pep": pep, "tol": tol, "unit": unit},
+                     res["n_theoretical"], len(matches), f"{len(matches)} ions matched")
+    elif not pep:
+        children.append(html.P("Enter a ProForma peptidoform and press Annotate to label fragment ions.", style={"color":C["muted"],"fontSize":"12px"}))
+    return html.Div(children)
+
+
+@callback(Output("download-data","data", allow_duplicate=True), Input("tools-spec-mgf","n_clicks"),
+          State("tools-spec-file","value"), State("tools-spec-scan","value"), State("tools-spec-pep","value"), prevent_initial_call=True)
+def _tools_mgf(n, path, scan, pep):
+    if not n or not path or scan is None: return no_update
+    spec = ep_io.read_spectrum_any(path, scan=int(scan))
+    if spec is None: return no_update
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return dict(content=ep_io.spectrum_to_mgf(spec, f"{stem}.{scan}", (pep or "").strip() or None), filename=f"{stem}_scan{scan}.mgf")
+
+
+@callback(Output("tools-export-status","children", allow_duplicate=True), Input("tools-spec-launch","n_clicks"),
+          State("tools-spec-file","value"), State("tools-spec-scan","value"), State("tools-spec-pep","value"), prevent_initial_call=True)
+def _tools_launch(n, path, scan, pep):
+    if not n or not path: return no_update
+    target = path
+    if scan is not None and path.lower().endswith((".ms1", ".ms2")):
+        spec = ep_io.read_spectrum_any(path, scan=int(scan))
+        if spec is not None:
+            target = os.path.join(SCRIPT_DIR, "tools", f"{os.path.splitext(os.path.basename(path))[0]}_scan{scan}.mgf")
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w") as fh: fh.write(ep_io.spectrum_to_mgf(spec, f"scan{scan}", (pep or "").strip() or None))
+    r = ep_tools.launch_annotator(target)
+    return html.Span(r["message"], style={"color": C["green"] if r["ok"] else C["red"]})
+
+
+@callback(Output("download-data","data", allow_duplicate=True), Output("tools-export-status","children"),
+          Input("tools-ptmvision","n_clicks"), Input("tools-report","n_clicks"),
+          State("cur-exp","data"), prevent_initial_call=True)
+def _tools_exports(n_ptm, n_rep, exp):
+    if not exp or exp not in EXP_DATA: return no_update, ""
+    d = EXP_DATA[exp]
+    stem = exp.split("(")[0].strip().replace(" ", "_")
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    if ctx.triggered_id == "tools-ptmvision":
+        tbl = ep_io.ptm_site_table(list(d["hptm"].index), d["hptm"], d.get("metadata")) if "hptm" in d else pd.DataFrame()
+        if tbl.empty: return no_update, "No single-PTM features to export."
+        log_analysis(exp, "export_ptmvision", {}, len(tbl), 0, "PTMVision CSV")
+        return dcc.send_data_frame(tbl.to_csv, f"{stem}_ptmvision_{ts}.csv", index=False), f"PTMVision CSV: {len(tbl)} sites"
+    if ctx.triggered_id == "tools-report":
+        html_str = build_experiment_report(d, exp)
+        log_analysis(exp, "export_report", {}, 0, 0, "HTML report")
+        return dict(content=html_str, filename=f"{stem}_report_{ts}.html", type="text/html"), "HTML report generated"
+    return no_update, ""
+
+
+def build_experiment_report(d, exp):
+    """Collect the headline figures/tables of an experiment into one HTML file."""
+    meta = d.get("metadata", pd.DataFrame())
+    sections = []
+    ov = pd.DataFrame([{"Experiment": exp, "Description": d.get("description", ""), "Samples": len(meta),
+                        "Groups": meta["Group"].nunique() if not meta.empty else 0,
+                        "hPTMs": d["hptm"].shape[0] if "hptm" in d else 0,
+                        "Peptidoforms": d["hpf"].shape[0] if "hpf" in d and not d["hpf"].empty else 0,
+                        "Regions": len(d.get("hdp_list", [])), "ndebug": d.get("ndebug", "default")}]).T.reset_index()
+    ov.columns = ["Field", "Value"]
+    sections.append(("Overview", "Loaded data and design", ov))
+    if not meta.empty:
+        sections.append(("Sample metadata", "", meta))
+    if "hptm" in d and d["hptm"] is not None and not d["hptm"].empty and not meta.empty:
+        df = d["hptm"]
+        z = df.sub(df.mean(axis=1), axis=0).div(df.std(axis=1).replace(0, np.nan), axis=0).fillna(0)
+        z = z.loc[cluster_order(z, 0)]
+        sections.append(("Single-PTM z-score heatmap", "Row-wise z-scores of hPTM ratios",
+                         phm(z.values, z.columns.tolist(), z.index.tolist(), cs="RdBu_r", zmin=-3, zmax=3,
+                             title="hPTM z-scores", h=max(400, 16*len(z)+150), meta=meta)))
+        gm = pd.DataFrame({g: df[[c for c in sub["Sample"] if c in df.columns]].mean(axis=1) for g, sub in meta.groupby("Group")})
+        gm.index.name = "PTM"
+        long = gm.reset_index().melt(id_vars="PTM", var_name="Group", value_name="Mean ratio")
+        fb = px.bar(long, x="PTM", y="Mean ratio", color="Group", barmode="group",
+                    title="Mean hPTM ratio per group", color_discrete_sequence=GC)
+        pfig(fb, 420, n_x=len(gm)); fb.update_layout(xaxis=dict(tickangle=45))
+        sections.append(("Group means", "", fb))
+        groups = sorted(meta["Group"].unique())
+        if len(groups) >= 2:
+            res = robust_group_test(df, meta, groups)
+            if not res.empty:
+                keep = [c for c in ["PTM", "KW_stat", "KW_pval", "KW_FDR", "KW_eps2"] + [f"mean_{g}" for g in groups] if c in res.columns]
+                sections.append(("Kruskal-Wallis across groups", "BH-FDR corrected; epsilon-squared effect size", res[keep].head(100)))
+                res["negLog10FDR"] = -np.log10(res["KW_FDR"].fillna(1) + 1e-300)
+                vf = px.scatter(res, x="KW_eps2", y="negLog10FDR", hover_name="PTM", title="Effect size vs significance",
+                                labels={"KW_eps2": "epsilon-squared", "negLog10FDR": "-log10(FDR)"}, color_discrete_sequence=[C["accent"]])
+                pfig(vf, 420)
+                sections.append(("Effect size vs FDR", "", vf))
+        # missingness
+        binary = (~df.isna() & (df != 0)).astype(int)
+        sections.append(("Detection matrix", "1 = detected", phm(binary.values, binary.columns.tolist(), binary.index.tolist(),
+                                                                cs=[[0, "#fef2f2"], [1, "#059669"]], title="Detected", h=max(300, 12*len(binary)+120))))
+    psm = d.get("all_psm", pd.DataFrame())
+    if psm is not None and not psm.empty:
+        summ = ep_io.summarize_psms(psm)
+        if not summ["per_sample"].empty:
+            sections.append(("PSMs per sample", "", summ["per_sample"]))
+    feat = d.get("dinosaur", pd.DataFrame())
+    if feat is not None and not feat.empty:
+        sections.append(("Dinosaur MS1 features", "", ep_io.summarize_dinosaur(feat)))
+    return ep_report.build_report(sections, title=f"EpiProfile-Plants: {exp}", subtitle=d.get("description", ""))
+
+
+# ======================================================================
 # RUN
 # ======================================================================
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("  EpiProfile-Plants Dashboard v3.13")
+    print("  EpiProfile-Plants Dashboard v3.15")
     print(f"  Experiments: {len(EXP_DATA)}")
     for n in EXP_DATA: print(f"    * {n}")
     print(f"\n  =>  http://localhost:{args.port}")

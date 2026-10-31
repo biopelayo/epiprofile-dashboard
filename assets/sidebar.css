@@ -1,4 +1,4 @@
-/* EpiProfile-Plants Dashboard v3.13 -- Sidebar Navigation Styles */
+/* EpiProfile-Plants Dashboard v3.15 -- Sidebar Navigation Styles */
 
 /* ---- Sidebar scrollbar ---- */
 .sidebar-nav::-webkit-scrollbar { width: 5px; }
@@ -41,3 +41,16 @@
     gap: 10px !important;
     width: 100% !important;
 }
+
+/* ---- Dash 4 native dropdown: readable text + menu above cards ----
+   Dash >= 4 replaced react-select (.Select-*) with .dash-dropdown-* markup.
+   The header sets color:white, which the new dropdown button inherits. */
+.dash-dropdown,
+.dash-dropdown .dash-dropdown-value,
+.dash-dropdown-content,
+.dash-dropdown-option,
+.dash-dropdown-search { color: #0f1f13 !important; }
+.dash-dropdown { background: #ffffff; }
+.dash-dropdown-content { z-index: 1000 !important; }
+.dash-dropdown-option.selected { background: rgba(34,197,94,0.14) !important; font-weight: 600; }
+.dash-dropdown-option:hover { background: rgba(34,197,94,0.08) !important; }

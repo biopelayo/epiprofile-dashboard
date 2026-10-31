@@ -14,3 +14,14 @@ Thumbs.db
 *.ms2
 *.raw
 *.zip
+
+# Runtime SQLite analysis log
+epiprofile.db
+experiments.json
+.pytest_cache/
+
+# downloaded external tools and scratch exports
+tools/*.jar
+tools/*.part
+tools/*.mgf
+tools/annotator*

@@ -1,0 +1,44 @@
+{
+  "_comment": "Copy to experiments.json and edit. Only 'dir' is required; relative paths resolve against this file. 'ndebug' and 'dataset' are inferred from the name/path when omitted.",
+
+  "PXD046788 ndebug_0": {
+    "dir": "D:/epiprofile_data/PXD046788/MS1_MS2/RawData",
+    "ratios": "histone_ratios.xls",
+    "ndebug": "ndebug_0", "dataset": "PXD046788"
+  },
+  "PXD046788 ndebug_2": {
+    "dir": "D:/epiprofile_data/PXD046788/MS1_MS2/RawData",
+    "ratios": "histone_ratios_ndebug2.xls",
+    "ndebug": "ndebug_2", "dataset": "PXD046788"
+  },
+  "PXD014739 ndebug_0": {
+    "dir": "D:/epiprofile_data/PXD014739/RawData",
+    "ratios": "histone_ratios_ndebug0.xls",
+    "ndebug": "ndebug_0", "dataset": "PXD014739"
+  },
+  "PXD014739 ndebug_2": {
+    "dir": "D:/epiprofile_data/PXD014739/RawData",
+    "ratios": "histone_ratios_ndeg2.xls",
+    "singleptm_dir": "PXD014738_ndebug2_histone_layouts",
+    "ndebug": "ndebug_2", "dataset": "PXD014739"
+  },
+  "PXD046034": {
+    "dir": "D:/epiprofile_data/PXD046034/MS1_MS2",
+    "phenodata": "E:/EpiProfile_AT_PXD046034_raw/PXD046034/PXD046034/analysis_PXD046034/analysis/post_epiprofile/phenodata_PXD046034.tsv",
+    "ndebug": "default", "dataset": "PXD046034"
+  },
+  "Ontogeny ndebug_0": {
+    "dir": "E:/EpiProfile_Proyecto/EpiProfile_20_AT/RawData",
+    "ratios": "histone_ratios_ndebug0_ontogenia.xls",
+    "singleptm_dir": "histone_layouts_ndebug_0",
+    "ndebug": "ndebug_0", "dataset": "Ontogeny"
+  },
+  "Ontogeny ndebug_2": {
+    "dir": "E:/EpiProfile_Proyecto/EpiProfile_20_AT/RawData",
+    "ratios": "histone_ratios.xls",
+    "ndebug": "ndebug_2", "dataset": "Ontogeny"
+  },
+  "Demo": {
+    "dir": "examples/demo_experiment"
+  }
+}

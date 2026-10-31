@@ -1,0 +1,3 @@
+pyteomics>=4.7
+psims>=1.3
+rustyms==0.9.0

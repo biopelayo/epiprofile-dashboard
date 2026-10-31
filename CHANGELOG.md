@@ -4,6 +4,77 @@ All notable changes to EpiProfile-Plants Dashboard.
 
 ---
 
+## v3.15 (2026-10-31)
+
+### Added
+- **Tools & Report tab** (17th tab):
+  - **Dinosaur** MS1 feature detection (Teleman et al. 2016) run from the dashboard on every mzML of the experiment; `python ep_tools.py install` downloads the jar, `python ep_tools.py run x.mzML` runs it standalone. Feature tables (`*.features.tsv`) are loaded and summarised in the QC Dashboard (features per run, RT x m/z map, charge fraction).
+  - **Annotator**: spectrum viewer and fragment annotation for **mzML** (pyteomics) and RawConverter **.ms1/.ms2** files (native reader). ProForma peptidoforms, a/b/c/x/y/z ladders, ppm or Da tolerance, sequence-coverage strip, matched-ion table, explained intensity. Optional cross-check with **rustyms**, the engine of the Snijder-lab Annotator desktop app. One-click **MGF export** and **launch of the Annotator app** (`tools/` or `ANNOTATOR_BIN`).
+  - **PTMVision CSV export** (uniprot_id, position, modification_unimod_name, modification_unimod_id) for the Tubingen PTMVision web server.
+  - **Self-contained HTML report** (overview, metadata, z-score heatmap, group means, Kruskal-Wallis table, effect-size plot, detection matrix, PSM and Dinosaur summaries).
+- **Cross-Experiment tab** (16th tab): shared hPTM overlap table, z-scored group-mean heatmap across experiments, Spearman correlation matrix and scatter of experiment means.
+- **Statistics**: `ep_stats.py` with imputation (half-minimum, row median, kNN), batch correction (per-batch median centering, parametric empirical-Bayes **ComBat**), **Welch t** and **moderated t (limma-style squeezeVar)** in addition to Mann-Whitney, **Cliff's delta** and **Hedges' g** effect sizes in Comparisons, **epsilon-squared** for Kruskal-Wallis.
+- **Per-region detail files** for every region (`histone_layouts/<sample>/detail/<REGION>.xls`): charge-state resolved areas, RT boxplots and a per-sample table in Region Map; coverage summary in QC.
+- **PSM evidence**: `identification_list.xls` summarised column-agnostically (PSMs per sample, charge states, score distribution, spectral counts per peptide) in QC.
+- **Result cache** for PCA and Statistics content (cleared on upload).
+- Demo dataset now ships sample folders with PSM lists and region detail files, Dinosaur feature tables, a mini mzML and a mini .ms2.
+- `requirements-optional.txt` (pyteomics, psims, rustyms); 55 tests (`tests/test_modules.py` added).
+
+### Changed
+- Code split starts: `ep_stats.py`, `ep_io.py`, `ep_tools.py`, `ep_report.py` next to the main script.
+
+---
+
+## v3.14 (2026-10-30)
+
+### Added
+- **Upload accepts CSV, TSV, real Excel (.xlsx) and EpiProfile's tab-separated .xls**; delimiter is sniffed automatically. Phenodata column aliases (`Sample`, `Group`, `Condition`...) are mapped onto `Sample_Name` / `Sample_Group`.
+- **Excel export** (`.xlsx`, one sheet per table) in Export to R.
+- Screenshots of the demo dataset in `docs/screenshots/`.
+- **Portable configuration**: experiments are declared in `experiments.json` (template: `experiments.example.json`), located via `--config`, `$EPIPROFILE_CONFIG` or next to the script. Relative paths resolve against the config file.
+- **CLI `NAME=PATH` syntax** and automatic inference of `ndebug` / `dataset` from names, paths and ratios filenames, so the ndebug Compare and Paper & Design tabs work for directories passed on the command line.
+- **Bundled demo dataset** (`examples/demo_experiment`, synthetic) loaded when nothing is configured; generator in `scripts/make_demo_data.py`.
+- **Smoke tests** (`tests/test_smoke.py`): load the demo and render all 15 tabs.
+- `EPIPROFILE_PORT` / `EPIPROFILE_HOST` environment variables, `--no-demo` flag.
+
+### Changed
+- Hard-coded Windows default paths removed from the source (moved to `experiments.example.json`).
+- Default bind host is now `127.0.0.1` (use `--host 0.0.0.0` to expose on the network).
+- Bare `except:` clauses narrowed to `except Exception:`.
+- README / WHITEPAPER updated to the current tab count and layout; `epiprofile.db` and `experiments.json` ignored by git.
+
+### Fixed
+- **Dash 4 compatibility**: header Experiment / Palette dropdowns rendered white-on-white (new `.dash-dropdown-*` markup inherited the header text colour); PCA, Statistics and ndebug Compare stayed empty until a control was touched (`prevent_initial_call` on their content callbacks).
+- Missing experiment directories now exit with status 1 and an actionable message.
+
+---
+
+## v3.13 (2026-02-26)
+
+### Changed
+- Sidebar navigation panel replaces the horizontal tab strip; compact header; fixed experiment selector overlap.
+
+---
+
+## v3.12 (2026-02-22)
+
+### Added
+- **Paper & Design tab** with publication information for PXD046788, PXD014739 and PXD046034.
+
+---
+
+## v3.11 (2026-02-22)
+
+### Added
+- **H3K79 Validation tab** aggregating ratios, areas, RT, PSMs and per-sample detail files for the H3 73-83 region.
+- Tissue filter in Statistics and Comparisons.
+- Green SVG icon set for all sections.
+
+### Fixed
+- PUB layout template conflicts; PXD046034 phenodata path; duplicate legend kwarg in H3K79 box plot.
+
+---
+
 ## v3.10 (2026-02-21)
 
 ### Added
